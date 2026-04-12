@@ -1,0 +1,8 @@
+.vscode
+data
+.work-folder-info
+.vfsmeta
+.stubs
+.vfscache
+minio_data
+postgres_data

@@ -1,0 +1,62 @@
+services:
+
+  postgres:
+    image: postgres:15
+    container_name: mlflow_postgres
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: mlflow_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio123
+      MINIO_ROOT_PASSWORD: minio123
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
+    volumes:
+      - ./minio_data:/data
+
+  create_bucket:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set myminio http://minio:9000 minio minio123;
+      mc mb myminio/mlflow;
+      mc policy set public myminio/mlflow;
+      exit 0;
+      "
+
+  mlflow:
+    image: python:3.11-slim
+    container_name: mlflow_server
+    depends_on:
+      - postgres
+      - minio
+      - create_bucket
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: minio123
+      AWS_SECRET_ACCESS_KEY: minio123
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    command: >
+      bash -c "
+      pip install mlflow psycopg2-binary boto3 &&
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
+      --default-artifact-root s3://mlflow
+      "

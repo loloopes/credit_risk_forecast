@@ -1,0 +1,16 @@
+pyspark==3.5.1
+pandas
+missingno
+matplotlib
+numpy
+seaborn
+scikit-learn
+lightgbm
+optuna
+plotly
+mlflow
+psycopg2-binary
+boto3
+fastapi
+pydantic
+uvicorn
