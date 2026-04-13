@@ -1,0 +1,22 @@
+# Recomendação estratégica:
+
+Pode-se priorizar Recall para defaulters, se o custo de um defaulter é muito maior do que a perda de lucro de um bom pagador.
+Logo a proposta Política de Crédito deve justificar o threshold baseado no estado atual do banco e seu apetite para risco.
+Se o banco está numa fase de crescimento, talvez usar 0.5 seja interessante, se em crise e há a necessidade imediata de cortar gastos, um threshold de 0.3
+
+### O Threshold 0.3
+
+* Esse é o ajuste mais conservativo. Ele pega quase todos os potenciais defaulters. Que pode alinhar com o objetivo do banco de reduzir inadimplência.
+* Trade-off: Tem a menor precisão para classe 1. Sendo tão restrito, o banco rejeitará muitos bons pagadores (Falso positivos).
+
+
+
+### O Threshold 0.5
+
+* Esse threshold fica no meio das métricas (0.3, 0.5, 0.9). Oferece um recall de defaulters moderado melhorando o recall_classe_0, significa que menos bons pagadores estão sendo rejeitados se comparado ao threshold 0.3
+
+
+# O Threshold 0.9
+
+* Alta precisão para a classe 1. Esse é o modelo mais agressivo. Quando o modelo prediz se alguém vai dar default, é quase absolutamente certo (alta precisao_classe_1)
+* O risco: O recall_classe_1 está no seu ponto mais baixo. O banco está deixando muitos mal pagadores pegar empréstimos porque está apenas rejeitando os casos de default óbvios. Com essa configuração certamente o número de mal pagadores vai aumentar!

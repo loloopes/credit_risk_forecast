@@ -1,0 +1,54 @@
+### Python=3.12
+
+### Para rodar o notebook lgbm_test que é onde estã o notebook com o modelo de treino e production grade rodar *pip install -r requirements.txt* na raiz do projeto
+
+### Docker e Docker Compose instalado
+
+### Rodar docker *compose up -d* na raiz do projeto para levantar a API e MLFlow (registrar os modelos do notebook production grade), MLFlow pode demorar um pouco a subir, só com MLFlow rodando 
+é que o production grade vai rodar
+
+### Para testar a API POST http://localhost:8000/predict
+
+
+body 
+
+{
+  "id_cliente": "12345",
+  "id_contrato": "98765",
+  "tipo_contrato": "financiamento",
+  "status_contrato": "ativo",
+  "tipo_pagamento": "boleto",
+  "finalidade_emprestimo": "compra_veiculo",
+  "tipo_cliente": "pessoa_fisica",
+  "tipo_portfolio": "varejo",
+  "tipo_produto": "credito_pessoal",
+  "categoria_bem": "automovel",
+  "setor_vendedor": "concessionaria",
+  "canal_venda": "online",
+  "faixa_rendimento": "3000_5000",
+  "combinacao_produto": "padrao",
+  "area_venda": "sul",
+  "dia_semana_solicitacao": "segunda",
+  "data_nascimento": "1990-05-20",
+  "data_decisao": "2024-06-01",
+  "data_liberacao": "2024-06-02",
+  "data_primeiro_vencimento": "2024-07-01",
+  "data_ultimo_vencimento_original": "2026-06-01",
+  "data_ultimo_vencimento": "2026-06-01",
+  "data_encerramento": null,
+  "valor_solicitado": 20000.0,
+  "valor_credito": 18000.0,
+  "valor_bem": 25000.0,
+  "valor_parcela": 750.0,
+  "valor_entrada": 7000.0,
+  "percentual_entrada": 0.28,
+  "qtd_parcelas_planejadas": 24,
+  "taxa_juros_padrao": 0.02,
+  "taxa_juros_promocional": 0.015,
+  "hora_solicitacao": 14,
+  "flag_ultima_solicitacao_contrato": 1,
+  "flag_ultima_solicitacao_dia": 1,
+  "acompanhantes_cliente": 0,
+  "flag_seguro_contratado": 1,
+  "motivo_recusa": null
+}

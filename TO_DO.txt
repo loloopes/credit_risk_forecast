@@ -1,0 +1,9 @@
+1 - Implementar comunicação entre API e MLFlow para baixar o modelo automaticamente (de acordo com métrica)
+
+2 - Implementar CI/CD para retreinar o modelo quando uma versão nova for mergeada na main/master
+
+3 - Implementar DVC (Data Version Control) para reproducibilidade dos experimentos e modelos
+
+4 - Airflow para orquestrar toda a pipeline de dados/modelo
+
+5 - Implementarar monitoring (model decay/data drift)
