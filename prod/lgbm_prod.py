@@ -1,54 +1,47 @@
 import os
 from typing import Optional
 
-import mlflow.sklearn
+import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# IMPORTANTE: A classe CreditFeatureEngineering deve estar definida aqui 
-# ou importada de um módulo comum para que o log_model funcione.
-
 # ==========================================
-# 1. CONFIGURAÇÃO DE AMBIENTE
+# 1. DEFINIÇÃO DA CLASSE (Obrigatório para o Pipeline funcionar)
 # ==========================================
-os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://localhost:9000"
-os.environ["AWS_ACCESS_KEY_ID"] = "minio123"
-os.environ["AWS_SECRET_ACCESS_KEY"] = "minio123"
-os.environ["MLFLOW_S3_IGNORE_TLS"] = "true"
-
-mlflow.set_tracking_uri("http://localhost:5000")
+# Se a classe CreditFeatureEngineering estiver em outro arquivo, importe-a aqui:
+# from feature_engineering import CreditFeatureEngineering
 
 app = FastAPI(title="Datarisk Credit Scoring API")
 
 # ==========================================
-# 2. CARREGAMENTO DO MODELO
+# 2. CARREGAMENTO LOCAL DO MODELO
 # ==========================================
-# Substitua pelo seu RUN_ID real ou use o alias 'latest' se configurado no Registry
-RUN_ID = "654bc08bc8194392822cd24b8549fa4f" 
-model_uri = f"runs:/{RUN_ID}/credit_model_pipeline"
-try:
-    print(f"Baixando modelo de: {model_uri}...")
-    model = mlflow.sklearn.load_model(model_uri)
-    print("Modelo carregado com sucesso!")
-except Exception as e:
-    print(f"Erro ao carregar modelo: {e}")
-    model = None
 
+MODEL_PATH = "credit_model_pipeline.pkl"
+
+import __main__
+
+try:
+    print(f"Carregando modelo local de: {MODEL_PATH}...")
+
+    # Inject class into __main__ (fix pickle issue)
+    from feature_engineering import CreditFeatureEngineering
+    __main__.CreditFeatureEngineering = CreditFeatureEngineering
+
+    model = joblib.load(MODEL_PATH)
+
+    print("✅ Modelo carregado com sucesso!")
+
+except Exception as e:
+    print(f"❌ Erro crítico ao carregar modelo: {e}")
+    model = None
 # ==========================================
 # 3. SCHEMA DE ENTRADA (FEATURES)
 # ==========================================
-from typing import Optional
-
-from pydantic import BaseModel
-
-
 class CreditApplication(BaseModel):
-    # --- Identificadores (removidos no transform, mas necessários no input) ---
     id_cliente: str
     id_contrato: Optional[str] = None
-    
-    # --- Colunas Categóricas (Processadas pelo OrdinalEncoder) ---
     tipo_contrato: str
     status_contrato: str
     tipo_pagamento: str
@@ -63,17 +56,13 @@ class CreditApplication(BaseModel):
     combinacao_produto: Optional[str] = None
     area_venda: Optional[str] = None
     dia_semana_solicitacao: Optional[str] = None
-    
-    # --- Datas (Usadas para calcular Idade e depois removidas) ---
-    data_nascimento: str # Formato 'YYYY-MM-DD'
-    data_decisao: str    # Formato 'YYYY-MM-DD'
+    data_nascimento: str 
+    data_decisao: str    
     data_liberacao: Optional[str] = None
     data_primeiro_vencimento: Optional[str] = None
     data_ultimo_vencimento_original: Optional[str] = None
     data_ultimo_vencimento: Optional[str] = None
     data_encerramento: Optional[str] = None
-    
-    # --- Features Numéricas (Passadas direto ao LightGBM) ---
     valor_solicitado: float
     valor_credito: float
     valor_bem: float
@@ -88,9 +77,8 @@ class CreditApplication(BaseModel):
     flag_ultima_solicitacao_dia: int
     acompanhantes_cliente: int
     flag_seguro_contratado: int
-    
-    # --- Outros ---
     motivo_recusa: Optional[str] = None
+
 # ==========================================
 # 4. ENDPOINTS
 # ==========================================
@@ -98,16 +86,16 @@ class CreditApplication(BaseModel):
 @app.post("/predict")
 async def predict(application: CreditApplication):
     if model is None:
-        raise HTTPException(status_code=500, detail="Modelo não carregado no servidor.")
+        raise HTTPException(status_code=500, detail="Modelo não carregado no servidor local.")
     
     try:
-        # 1. Converter entrada para DataFrame (esperado pelo Pipeline)
+        # 1. Converter entrada para DataFrame
         input_df = pd.DataFrame([application.model_dump()])
         
-        # 2. Inferência (O Pipeline executa o CreditFeatureEngineering automaticamente)
+        # 2. Inferência
         probability = model.predict_proba(input_df)[0, 1]
         
-        # 3. Política de Crédito Simples baseada nos seus Thresholds
+        # 3. Política de Crédito baseada nos Thresholds definidos no projeto
         decision = "Aprovado"
         if probability > 0.5:
             decision = "Negado"

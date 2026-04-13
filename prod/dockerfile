@@ -1,0 +1,27 @@
+# 1. Imagem base leve com Python
+FROM python:3.11-slim
+
+# 2. Instala dependências do sistema necessárias para o LightGBM e Psycopg2
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. Define o diretório de trabalho
+WORKDIR /app
+
+# 4. Copia apenas o arquivo de dependências primeiro (otimiza o cache do Docker)
+# Se você tiver um requirements.txt, use-o. Caso contrário, instalaremos via RUN.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 5. Copia o restante do código da API
+# Certifique-se de que a classe CreditFeatureEngineering esteja no mesmo diretório ou em um arquivo importado
+COPY . .
+
+# 6. Expõe a porta que o FastAPI usará
+EXPOSE 8000
+
+# 7. Comando para iniciar a API com Uvicorn
+CMD ["uvicorn", "lgbm_prod:app", "--host", "0.0.0.0", "--port", "8000"]

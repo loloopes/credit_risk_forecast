@@ -60,3 +60,24 @@ services:
       --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
       --default-artifact-root s3://mlflow
       "
+
+  # --- SUA API DE CRÉDITO ---
+  credit_api:
+    build:
+      context: ./prod
+      dockerfile: Dockerfile
+    container_name: credit_scoring_api
+    depends_on:
+      - mlflow
+      - minio
+    ports:
+      - "8000:8000"
+    environment:
+      # Importante: Usamos os nomes dos serviços do Docker Compose como hosts
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minio123
+      AWS_SECRET_ACCESS_KEY: minio123
+      MLFLOW_S3_IGNORE_TLS: "true"
+      # Passamos o RUN_ID como variável de ambiente para ser dinâmico
+      RUN_ID: "654bc08bc8194392822cd24b8549fa4f"
