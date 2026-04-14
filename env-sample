@@ -36,7 +36,7 @@ AIRFLOW__CORE__FERNET_KEY=
 AIRFLOW_PROJ_DIR=.
 _AIRFLOW_WWW_USER_USERNAME=airflow
 _AIRFLOW_WWW_USER_PASSWORD=airflow
-_PIP_ADDITIONAL_REQUIREMENTS=apache-airflow-providers-docker
+_PIP_ADDITIONAL_REQUIREMENTS=apache-airflow-providers-docker mlflow lightgbm scikit-learn pandas pyarrow boto3
 
 # Training configuration
 TRAIN_DATA_PATH=
@@ -67,5 +67,5 @@ MONITOR_MAX_ROWS=0
 NANNYML_EVAL_IMAGE=datarisk/nannyml-evaluator:latest
 NANNYML_DOCKER_NETWORK_MODE=container:credit_scoring_api
 API_PAYLOAD_DEFAULTS_JSON={"status_contrato":"ativo","tipo_pagamento":"boleto","finalidade_emprestimo":"compra_veiculo","tipo_cliente":"pessoa_fisica","tipo_portfolio":"varejo","tipo_produto":"credito_pessoal","categoria_bem":"automovel","setor_vendedor":"digital","canal_venda":"online","valor_solicitado":0.0,"valor_entrada":0.0,"percentual_entrada":0.0,"qtd_parcelas_planejadas":12,"taxa_juros_padrao":0.03,"taxa_juros_promocional":0.03,"flag_ultima_solicitacao_contrato":0,"flag_ultima_solicitacao_dia":0,"acompanhantes_cliente":0,"flag_seguro_contratado":0}
-MONITOR_API_WORKERS=8
+MONITOR_API_WORKERS=16
 MONITOR_PROGRESS_EVERY=500

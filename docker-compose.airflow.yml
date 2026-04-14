@@ -11,7 +11,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES:-False}
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8080/execution/"
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-apache-airflow-providers-docker mlflow lightgbm scikit-learn pandas pyarrow boto3}
     AIRFLOW_CONFIG: "/opt/airflow/config/airflow.cfg"
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
