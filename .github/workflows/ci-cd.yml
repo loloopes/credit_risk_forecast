@@ -5,6 +5,8 @@ on:
     branches: [master, main]
   push:
     branches: [master, main]
+  # Run Actions → this workflow → "Run workflow" to trigger Airflow without a push to main.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -84,9 +86,11 @@ jobs:
   trigger-airflow:
     name: Trigger Airflow retraining DAG
     needs: ci
+    # Not on PRs. Needs a self-hosted runner with labels: self-hosted, Linux, X64, vpn (Airflow API is VPN-only).
     if: >
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'))
     # Poll can run up to ~30 min (60 × 30s); allow headroom. Exit 137 is often SIGKILL (OOM or runner limits).
     timeout-minutes: 120
     runs-on:
@@ -104,6 +108,7 @@ jobs:
           echo "repo=${GITHUB_REPOSITORY}"
           echo "ref=${GITHUB_REF}"
           echo "event=${GITHUB_EVENT_NAME}"
+          echo "This job only runs on: push to main/master, or workflow_dispatch (not on pull_request)."
           echo -n "AIRFLOW_API_URL: "
           [ -n "${AIRFLOW_API_URL}" ] && echo "set" || echo "MISSING"
           echo -n "AIRFLOW_API_USERNAME: "
