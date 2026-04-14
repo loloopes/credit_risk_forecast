@@ -51,6 +51,16 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000', timeout=5)\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     command: >
       bash -c "
       pip install mlflow psycopg2-binary boto3 &&
@@ -68,8 +78,10 @@ services:
       dockerfile: Dockerfile
     container_name: credit_scoring_api
     depends_on:
-      - mlflow
-      - minio
+      mlflow:
+        condition: service_healthy
+      minio:
+        condition: service_started
     ports:
       - "8000:8000"
     environment:
