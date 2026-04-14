@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
@@ -6,6 +7,7 @@ from urllib.parse import urlparse
 import boto3
 import mlflow
 import mlflow.sklearn
+import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
 from sklearn.compose import ColumnTransformer
@@ -67,7 +69,50 @@ def _load_if_provided(dataset_uri: str | None) -> pd.DataFrame | None:
     return None
 
 
+def _derive_targets_from_parcelas(hp: pd.DataFrame) -> pd.DataFrame:
+    """Match model/lgbm_test.ipynb: FPD, EVER30MOB03, OVER60MOB06 at id_contrato grain."""
+    id_contrato_col = os.getenv("ID_CONTRATO_COLUMN", "id_contrato")
+    needed = {
+        id_contrato_col,
+        "numero_parcela",
+        "data_real_pagamento",
+        "data_prevista_pagamento",
+    }
+    missing = needed - set(hp.columns)
+    if missing:
+        raise ValueError(f"historico_parcelas missing columns required for targets: {sorted(missing)}")
+
+    hp = hp.copy()
+    hp["data_real_pagamento"] = pd.to_datetime(hp["data_real_pagamento"], errors="coerce")
+    hp["data_prevista_pagamento"] = pd.to_datetime(hp["data_prevista_pagamento"], errors="coerce")
+    hp["atraso"] = (hp["data_real_pagamento"] - hp["data_prevista_pagamento"]).dt.days
+    hp["atraso"] = hp["atraso"].fillna(999)
+
+    mob03 = hp[hp["numero_parcela"] <= 3]
+    ever30 = (mob03.groupby(id_contrato_col, sort=False)["atraso"].max() > 30).astype(int)
+    ever30 = ever30.reset_index()
+    ever30.columns = [id_contrato_col, "target_ever30mob03"]
+
+    mob06 = hp[hp["numero_parcela"] <= 6]
+    over60 = mob06.groupby(id_contrato_col, sort=False)["atraso"].apply(lambda x: x[x > 0].sum()) > 60
+    over60 = over60.astype(int).reset_index()
+    over60.columns = [id_contrato_col, "target_over60mob06"]
+
+    fpd = hp[hp["numero_parcela"] == 1].copy()
+    fpd["atraso_fpd"] = (fpd["data_real_pagamento"] - fpd["data_prevista_pagamento"]).dt.days
+    fpd["target_fpd"] = np.where((fpd["atraso_fpd"] > 1) | fpd["atraso_fpd"].isna(), 1, 0)
+    fpd_small = fpd[[id_contrato_col, "target_fpd"]].drop_duplicates(subset=[id_contrato_col])
+
+    out = ever30.merge(over60, on=id_contrato_col, how="outer")
+    out = out.merge(fpd_small, on=id_contrato_col, how="outer")
+    return out.fillna(0)
+
+
 def _build_training_dataset_from_raw_sources() -> pd.DataFrame:
+    """
+    Grain is one row per contrato (see dicionario_dados.csv: base_submissao has no id_contrato).
+    Labels come from historico_parcelas; features from historico_emprestimos + base_cadastral (+ optional base_submissao).
+    """
     id_cliente_col = os.getenv("ID_CLIENTE_COLUMN", "id_cliente")
     id_contrato_col = os.getenv("ID_CONTRATO_COLUMN", "id_contrato")
 
@@ -76,37 +121,40 @@ def _build_training_dataset_from_raw_sources() -> pd.DataFrame:
     emprestimos_path = os.getenv("RAW_EMPRESTIMOS_PATH", "s3://mlflow/data/historico_emprestimos.parquet")
     parcelas_path = os.getenv("RAW_PARCELAS_PATH", "s3://mlflow/data/historico_parcelas.parquet")
 
-    base_df = _load_dataset_from_uri(submissao_path)
-    cadastral_df = _load_if_provided(cadastral_path)
     emprestimos_df = _load_if_provided(emprestimos_path)
     parcelas_df = _load_if_provided(parcelas_path)
-
-    if cadastral_df is not None and id_cliente_col in base_df.columns and id_cliente_col in cadastral_df.columns:
-        cadastral_cols = [c for c in cadastral_df.columns if c != id_cliente_col and c not in base_df.columns]
-        base_df = base_df.merge(
-            cadastral_df[[id_cliente_col] + cadastral_cols],
-            on=id_cliente_col,
-            how="left",
+    if emprestimos_df is None or emprestimos_df.empty:
+        raise ValueError(
+            "RAW_EMPRESTIMOS_PATH must load a non-empty historico_emprestimos dataset when TRAIN_DATA_PATH is unset."
         )
-
-    if emprestimos_df is not None and id_contrato_col in base_df.columns and id_contrato_col in emprestimos_df.columns:
-        emprestimos_cols = [c for c in emprestimos_df.columns if c != id_contrato_col and c not in base_df.columns]
-        base_df = base_df.merge(
-            emprestimos_df[[id_contrato_col] + emprestimos_cols],
-            on=id_contrato_col,
-            how="left",
+    if parcelas_df is None or parcelas_df.empty:
+        raise ValueError(
+            "RAW_PARCELAS_PATH must load a non-empty historico_parcelas dataset when TRAIN_DATA_PATH is unset."
         )
+    if id_contrato_col not in emprestimos_df.columns:
+        raise ValueError(f"historico_emprestimos missing {id_contrato_col!r}.")
 
-    if parcelas_df is not None and id_contrato_col in base_df.columns and id_contrato_col in parcelas_df.columns:
-        numeric_cols = parcelas_df.select_dtypes(include=["number"]).columns.tolist()
-        agg_cols = [c for c in numeric_cols if c != id_contrato_col]
-        if agg_cols:
-            agg_dict = {c: "mean" for c in agg_cols}
-            parcelas_agg = parcelas_df.groupby(id_contrato_col, as_index=False).agg(agg_dict)
-            parcelas_agg = parcelas_agg.rename(columns={c: f"{c}_parcelas_mean" for c in agg_cols})
-            base_df = base_df.merge(parcelas_agg, on=id_contrato_col, how="left")
+    targets_df = _derive_targets_from_parcelas(parcelas_df)
+    df = emprestimos_df.merge(targets_df, on=id_contrato_col, how="inner")
 
-    return base_df
+    cadastral_df = _load_if_provided(cadastral_path)
+    if cadastral_df is not None and id_cliente_col in df.columns and id_cliente_col in cadastral_df.columns:
+        ccols = [c for c in cadastral_df.columns if c != id_cliente_col]
+        df = df.merge(cadastral_df[[id_cliente_col] + ccols], on=id_cliente_col, how="left")
+
+    submissao_df = _load_if_provided(submissao_path)
+    if submissao_df is not None and id_cliente_col in df.columns and id_cliente_col in submissao_df.columns:
+        sub_dup = submissao_df.drop_duplicates(subset=[id_cliente_col], keep="last").copy()
+        renames = {
+            c: f"{c}_submissao"
+            for c in sub_dup.columns
+            if c != id_cliente_col and c in df.columns
+        }
+        if renames:
+            sub_dup = sub_dup.rename(columns=renames)
+        df = df.merge(sub_dup, on=id_cliente_col, how="left")
+
+    return df
 
 
 def _resolve_training_dataset() -> tuple[pd.DataFrame, str]:
@@ -115,25 +163,68 @@ def _resolve_training_dataset() -> tuple[pd.DataFrame, str]:
         return _load_dataset_from_uri(dataset_uri), dataset_uri
 
     df = _build_training_dataset_from_raw_sources()
-    return df, "raw_sources(base_submissao+base_cadastral+historico_emprestimos+historico_parcelas)"
+    return df, "raw_sources(historico_emprestimos+historico_parcelas_targets+base_cadastral[+base_submissao])"
+
+
+# Order matches common names from project notebooks / engineered exports.
+_TARGET_COLUMN_FALLBACKS: tuple[str, ...] = (
+    "target",
+    "target_over60mob06",
+    "target_ever30mob03",
+    "target_fpd",
+    "inadimplente",
+    "bad",
+)
+
+
+def _resolve_target_column(df: pd.DataFrame) -> str:
+    preferred = (os.getenv("TARGET_COLUMN") or "").strip()
+    if preferred and preferred in df.columns:
+        return preferred
+
+    for name in _TARGET_COLUMN_FALLBACKS:
+        if name in df.columns:
+            if preferred:
+                print(
+                    f"TARGET_COLUMN={preferred!r} not in dataset; using '{name}'.",
+                    flush=True,
+                )
+            return name
+
+    # Single column named like target_*
+    candidates = [c for c in df.columns if str(c).startswith("target")]
+    if len(candidates) == 1:
+        c = candidates[0]
+        if preferred:
+            print(
+                f"TARGET_COLUMN={preferred!r} not in dataset; using sole target-like column '{c}'.",
+                flush=True,
+            )
+        return c
+
+    cols_preview = sorted(df.columns.astype(str).tolist())[:80]
+    raise ValueError(
+        f"Target column not found. Set TARGET_COLUMN to one of the dataset columns. "
+        f"Tried TARGET_COLUMN={preferred!r} and fallbacks {_TARGET_COLUMN_FALLBACKS}. "
+        f"Columns (first 80): {cols_preview}"
+    )
 
 
 def main() -> None:
     dataset_uri = os.getenv("TRAIN_DATA_PATH", "").strip()
-    target_col = os.getenv("TARGET_COLUMN", "target")
-    experiment_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "credit_risk_training")
+    experiment_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "credit_Prisk_training")
     model_name = os.getenv("MLFLOW_REGISTERED_MODEL_NAME", "credit_model_pipeline_v2")
     mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 
     df, source_used = _resolve_training_dataset()
-    if target_col not in df.columns:
-        raise ValueError(f"Target column '{target_col}' not found in dataset.")
+    target_col = _resolve_target_column(df)
 
     X = df.drop(columns=[target_col])
     y = df[target_col]
 
+    strat = y if y.nunique() > 1 else None
     X_train, X_valid, y_train, y_valid = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X, y, test_size=0.2, random_state=42, stratify=strat
     )
 
     numeric_cols = X_train.select_dtypes(include=["number", "bool"]).columns.tolist()
@@ -166,6 +257,7 @@ def main() -> None:
     mlflow.set_experiment(experiment_name)
 
     with mlflow.start_run() as run:
+        mlflow.set_tag("training_started_at_utc", datetime.now(timezone.utc).isoformat())
         model.fit(X_train, y_train)
         y_valid_proba = model.predict_proba(X_valid)[:, 1]
         auc = roc_auc_score(y_valid, y_valid_proba)

@@ -1,0 +1,7 @@
+apache-airflow-providers-docker
+mlflow
+lightgbm
+scikit-learn
+pandas
+pyarrow
+boto3

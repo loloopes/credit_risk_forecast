@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from airflow.decorators import dag, task
+from airflow.sdk import dag, task
 
 from mlflow_training_env import get_training_env
 
