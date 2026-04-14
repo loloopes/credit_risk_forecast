@@ -114,9 +114,49 @@ jobs:
         run: |
           DAG_RUN_ID="gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           AIRFLOW_API_URL="${AIRFLOW_API_URL%/}"
+          echo "DAG_RUN_ID=${DAG_RUN_ID}" >> "${GITHUB_ENV}"
           echo "Triggering DAG '${DAG_ID}' with run id '${DAG_RUN_ID}'"
           curl --fail --silent --show-error \
             --user "${AIRFLOW_API_USERNAME}:${AIRFLOW_API_PASSWORD}" \
             -H "Content-Type: application/json" \
             -X POST "${AIRFLOW_API_URL}/api/v1/dags/${DAG_ID}/dagRuns" \
             -d "{\"dag_run_id\":\"${DAG_RUN_ID}\",\"conf\":{\"triggered_by\":\"github_actions\",\"sha\":\"${GITHUB_SHA}\"}}"
+
+      - name: Wait for retraining DAG to finish successfully
+        if: steps.airflow_secrets.outputs.configured == 'true'
+        env:
+          AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL }}
+          AIRFLOW_API_USERNAME: ${{ secrets.AIRFLOW_API_USERNAME }}
+          AIRFLOW_API_PASSWORD: ${{ secrets.AIRFLOW_API_PASSWORD }}
+          DAG_ID: credit_model_retrain_from_github_actions
+        run: |
+          AIRFLOW_API_URL="${AIRFLOW_API_URL%/}"
+          MAX_ATTEMPTS=60
+          SLEEP_SECONDS=30
+
+          for ATTEMPT in $(seq 1 "${MAX_ATTEMPTS}"); do
+            RESPONSE="$(curl --fail --silent --show-error \
+              --user "${AIRFLOW_API_USERNAME}:${AIRFLOW_API_PASSWORD}" \
+              -H "Content-Type: application/json" \
+              "${AIRFLOW_API_URL}/api/v1/dags/${DAG_ID}/dagRuns/${DAG_RUN_ID}")"
+
+            STATE="$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("state",""))' <<< "${RESPONSE}")"
+            echo "Attempt ${ATTEMPT}/${MAX_ATTEMPTS} - DAG run state: ${STATE}"
+
+            if [ "${STATE}" = "success" ]; then
+              echo "Retraining completed successfully."
+              exit 0
+            fi
+
+            if [ "${STATE}" = "failed" ] || [ "${STATE}" = "upstream_failed" ]; then
+              echo "::error::Retraining DAG run failed with state '${STATE}'."
+              exit 1
+            fi
+
+            if [ "${ATTEMPT}" -eq "${MAX_ATTEMPTS}" ]; then
+              echo "::error::Timed out waiting for retraining DAG to complete."
+              exit 1
+            fi
+
+            sleep "${SLEEP_SECONDS}"
+          done
