@@ -19,21 +19,26 @@ RUN_ID = os.getenv("RUN_ID")
 MLFLOW_MODEL_ARTIFACT_PATH = os.getenv("MLFLOW_MODEL_ARTIFACT_PATH", "credit_model_pipeline_v2")
 MLFLOW_MODEL_NAME = os.getenv("MLFLOW_MODEL_NAME", "credit_model_pipeline_v2")
 MLFLOW_MODEL_STAGE = os.getenv("MLFLOW_MODEL_STAGE", "latest")
+SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD", "false").lower() in {"1", "true", "yes"}
 
-try:
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-
-    model_uri = MLFLOW_MODEL_URI
-    if not model_uri and RUN_ID:
-        model_uri = f"runs:/{RUN_ID}/{MLFLOW_MODEL_ARTIFACT_PATH}"
-    if not model_uri:
-        model_uri = f"models:/{MLFLOW_MODEL_NAME}/{MLFLOW_MODEL_STAGE}"
-    print(f"Loading model from mlflow: {model_uri}...", flush=True)
-    model = mlflow.sklearn.load_model(model_uri=model_uri)
-    print("Model loaded successfully!", flush=True)
-except Exception as e:
-    print(f"Error loading model: {e}", flush=True)
+if SKIP_MODEL_LOAD:
+    print("SKIP_MODEL_LOAD enabled. Starting API without loading model.", flush=True)
     model = None
+else:
+    try:
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+        model_uri = MLFLOW_MODEL_URI
+        if not model_uri and RUN_ID:
+            model_uri = f"runs:/{RUN_ID}/{MLFLOW_MODEL_ARTIFACT_PATH}"
+        if not model_uri:
+            model_uri = f"models:/{MLFLOW_MODEL_NAME}/{MLFLOW_MODEL_STAGE}"
+        print(f"Loading model from mlflow: {model_uri}...", flush=True)
+        model = mlflow.sklearn.load_model(model_uri=model_uri)
+        print("Model loaded successfully!", flush=True)
+    except Exception as e:
+        print(f"Error loading model: {e}", flush=True)
+        model = None
 
 # ==========================================
 # Schema de entrada (payload bruto → DataFrame para o Pipeline)

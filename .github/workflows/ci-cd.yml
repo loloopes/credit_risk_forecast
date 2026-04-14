@@ -19,6 +19,7 @@ jobs:
         working-directory: .
     env:
       PYTHONPATH: ${{ github.workspace }}
+      SKIP_MODEL_LOAD: "true"
 
     steps:
       - name: Checkout repository
