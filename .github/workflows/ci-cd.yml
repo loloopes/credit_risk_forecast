@@ -87,6 +87,8 @@ jobs:
     if: >
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    # Poll can run up to ~30 min (60 × 30s); allow headroom. Exit 137 is often SIGKILL (OOM or runner limits).
+    timeout-minutes: 120
     runs-on:
       - self-hosted
       - Linux
@@ -160,6 +162,11 @@ jobs:
           AIRFLOW_API_PASSWORD: ${{ secrets.AIRFLOW_API_PASSWORD }}
           DAG_ID: credit_model_retrain_from_github_actions
         run: |
+          set -euo pipefail
+          if [ -z "${DAG_RUN_ID:-}" ]; then
+            echo "::error::DAG_RUN_ID missing (trigger step must run first)."
+            exit 1
+          fi
           AIRFLOW_API_URL="${AIRFLOW_API_URL%/}"
           MAX_ATTEMPTS=60
           SLEEP_SECONDS=30
