@@ -44,9 +44,8 @@ jobs:
 
   cd:
     name: Build and publish API image
-    needs:
-      - ci
-      - trigger-airflow
+    # Do not `needs: trigger-airflow` — that job waits for a VPN self-hosted runner; CD would stay queued with it.
+    needs: ci
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
 

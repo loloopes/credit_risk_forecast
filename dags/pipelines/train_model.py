@@ -12,7 +12,7 @@ import pandas as pd
 from lightgbm import LGBMClassifier
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
@@ -259,13 +259,27 @@ def main() -> None:
     with mlflow.start_run() as run:
         mlflow.set_tag("training_started_at_utc", datetime.now(timezone.utc).isoformat())
         model.fit(X_train, y_train)
+        y_valid_pred = model.predict(X_valid)
         y_valid_proba = model.predict_proba(X_valid)[:, 1]
         auc = roc_auc_score(y_valid, y_valid_proba)
+
+        labels = np.unique(np.concatenate([np.asarray(y_valid), np.asarray(y_valid_pred)]))
+        precisions = precision_score(
+            y_valid, y_valid_pred, labels=labels, average=None, zero_division=0
+        )
+        recalls = recall_score(
+            y_valid, y_valid_pred, labels=labels, average=None, zero_division=0
+        )
+        f1s = f1_score(y_valid, y_valid_pred, labels=labels, average=None, zero_division=0)
 
         mlflow.log_param("train_data_path", source_used if source_used else dataset_uri)
         mlflow.log_param("target_column", target_col)
         mlflow.log_param("n_features", X_train.shape[1])
         mlflow.log_metric("valid_auc", auc)
+        for i, lbl in enumerate(labels):
+            mlflow.log_metric(f"valid_precision_class_{lbl}", float(precisions[i]))
+            mlflow.log_metric(f"valid_recall_class_{lbl}", float(recalls[i]))
+            mlflow.log_metric(f"valid_f1_class_{lbl}", float(f1s[i]))
 
         model_info = mlflow.sklearn.log_model(
             sk_model=model,
