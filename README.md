@@ -1,36 +1,23 @@
-# Case Técnico – Cientista de Dados | Datarisk
+# Credit Risk Project
 
-## Apresentação
+* This repository contains a credit risk data science project. It follows a practical, business-oriented approach to building data solutions for credit intelligence and risk decision-making.
 
-Este repositório contém o case técnico para o processo seletivo de **Cientista de Dados** na **Datarisk**, uma empresa de consultoria especializada em soluções de dados e inteligência de crédito.  
-O desafio simula um projeto real de **risco de crédito**, como os que desenvolvemos junto a grandes instituições financeiras no Brasil.
+## Project Scope
 
-## Instruções
+* Build a realistic credit risk modeling workflow
+* Combine technical quality with business applicability
+* Demonstrate clear reasoning, structured problem-solving, and well-justified modeling choices
 
-Todas as instruções e regras para a realização do case estão detalhadas no documento: `Case Técnico DS.pdf`
 
-> **É imprescindível que você leia o documento com atenção** antes de iniciar sua solução.
+## Data Assets
+* Inside the data/ directory, you will find:
 
-## Bases de Dados
+* Four datasets used in analysis and modeling dicionario_dados.csv with a complete description of all variables
 
-Na pasta `/data`, você encontrará:
-- Quatro bases de dados para serem utilizadas (devidamente documentadas no PDF)
-- Um arquivo `dicionario_dados.csv` com a descrição completa de todas as variáveis
+* This project prioritizes:
 
-## Submissão
-
-Embora você possa publicar sua solução em um repositório público para fins de portfólio, **a submissão oficial deve ser feita por e-mail**, conforme descrito no PDF, para garantir a **anonimidade no processo seletivo**.
-
-⚠️ **Não inclua informações pessoais (nome, LinkedIn, GitHub, etc.) nos arquivos da solução**.
-
-## Recomendação
-
-Mais do que técnicas avançadas, queremos entender **como você pensa e estrutura sua abordagem frente ao problema de negócio**.  
-Técnicas simples e bem aplicadas, com clareza e justificativa, valem mais do que soluções complexas sem contexto e aplicabilidade.
-
-## Dica prática
-
-Se o processamento local estiver pesado, você pode utilizar o **Google Colab** para rodar os códigos.
-
-**Boa sorte no desafio!**
-
+* Clear problem framing
+* Coherent analytical structure
+* Well-justified decisions
+* Practical methods that deliver business value
+* The goal is not complexity for its own sake, but effective and explainable credit risk analytics.
