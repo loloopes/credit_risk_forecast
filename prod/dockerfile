@@ -1,5 +1,5 @@
 # 1. Imagem base leve com Python
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # 2. Instala dependências do sistema necessárias para o LightGBM e Psycopg2
 RUN apt-get update && apt-get install -y \
