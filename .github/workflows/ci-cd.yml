@@ -87,7 +87,11 @@ jobs:
     if: >
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+      - vpn
     steps:
       - name: Check Airflow secrets
         id: airflow_secrets
@@ -119,7 +123,7 @@ jobs:
           curl --fail --silent --show-error \
             --user "${AIRFLOW_API_USERNAME}:${AIRFLOW_API_PASSWORD}" \
             -H "Content-Type: application/json" \
-            -X POST "${AIRFLOW_API_URL}/api/v1/dags/${DAG_ID}/dagRuns" \
+            -X POST "${AIRFLOW_API_URL}/api/v2/dags/${DAG_ID}/dagRuns" \
             -d "{\"dag_run_id\":\"${DAG_RUN_ID}\",\"conf\":{\"triggered_by\":\"github_actions\",\"sha\":\"${GITHUB_SHA}\"}}"
 
       - name: Wait for retraining DAG to finish successfully
@@ -138,7 +142,7 @@ jobs:
             RESPONSE="$(curl --fail --silent --show-error \
               --user "${AIRFLOW_API_USERNAME}:${AIRFLOW_API_PASSWORD}" \
               -H "Content-Type: application/json" \
-              "${AIRFLOW_API_URL}/api/v1/dags/${DAG_ID}/dagRuns/${DAG_RUN_ID}")"
+              "${AIRFLOW_API_URL}/api/v2/dags/${DAG_ID}/dagRuns/${DAG_RUN_ID}")"
 
             STATE="$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("state",""))' <<< "${RESPONSE}")"
             echo "Attempt ${ATTEMPT}/${MAX_ATTEMPTS} - DAG run state: ${STATE}"
