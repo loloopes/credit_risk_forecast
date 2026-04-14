@@ -165,7 +165,7 @@ def main() -> None:
     mlflow.set_tracking_uri(mlflow_tracking_uri)
     mlflow.set_experiment(experiment_name)
 
-    with mlflow.start_run():
+    with mlflow.start_run() as run:
         model.fit(X_train, y_train)
         y_valid_proba = model.predict_proba(X_valid)[:, 1]
         auc = roc_auc_score(y_valid, y_valid_proba)
@@ -175,13 +175,22 @@ def main() -> None:
         mlflow.log_param("n_features", X_train.shape[1])
         mlflow.log_metric("valid_auc", auc)
 
-        mlflow.sklearn.log_model(
+        model_info = mlflow.sklearn.log_model(
             sk_model=model,
-            artifact_path="credit_model_pipeline_v2",
-            registered_model_name=model_name,
+            artifact_path="model",
         )
+        model_uri = f"runs:/{run.info.run_id}/model"
+        model_version = mlflow.register_model(model_uri=model_uri, name=model_name)
 
-        print(f"Training finished. Validation AUC: {auc:.4f}", flush=True)
+        mlflow.set_tag("registered_model_name", model_name)
+        mlflow.set_tag("registered_model_version", model_version.version)
+        mlflow.set_tag("logged_model_uri", model_info.model_uri)
+
+        print(
+            f"Training finished. Validation AUC: {auc:.4f}. "
+            f"Persisted to MLflow run {run.info.run_id} and model {model_name} v{model_version.version}",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

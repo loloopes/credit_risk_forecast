@@ -81,7 +81,7 @@ jobs:
 
   trigger-airflow:
     name: Trigger Airflow retraining DAG
-    needs: cd
+    needs: ci
     if: >
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
@@ -96,7 +96,8 @@ jobs:
         run: |
           if [ -z "${AIRFLOW_API_URL}" ] || [ -z "${AIRFLOW_API_USERNAME}" ] || [ -z "${AIRFLOW_API_PASSWORD}" ]; then
             echo "configured=false" >> "${GITHUB_OUTPUT}"
-            echo "Airflow secrets are missing. Skipping DAG trigger."
+            echo "::error::Airflow secrets are missing. Configure AIRFLOW_API_URL, AIRFLOW_API_USERNAME, and AIRFLOW_API_PASSWORD."
+            exit 1
           else
             echo "configured=true" >> "${GITHUB_OUTPUT}"
           fi
@@ -110,6 +111,8 @@ jobs:
           DAG_ID: credit_model_retrain_from_github_actions
         run: |
           DAG_RUN_ID="gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          AIRFLOW_API_URL="${AIRFLOW_API_URL%/}"
+          echo "Triggering DAG '${DAG_ID}' with run id '${DAG_RUN_ID}'"
           curl --fail --silent --show-error \
             --user "${AIRFLOW_API_USERNAME}:${AIRFLOW_API_PASSWORD}" \
             -H "Content-Type: application/json" \
