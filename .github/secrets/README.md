@@ -1,10 +1,12 @@
 ## Airflow Secrets for GitHub Actions
 
-These secrets are required by `.github/workflows/ci-cd.yml` to trigger the retraining DAG from GitHub Actions:
+These values are required by `.github/workflows/ci-cd.yml` to trigger the retraining DAG from GitHub Actions:
 
-- `AIRFLOW_API_URL`
-- `AIRFLOW_API_USERNAME`
-- `AIRFLOW_API_PASSWORD`
+- `AIRFLOW_API_URL` — can be a **Repository variable** (`Settings → Secrets and variables → Actions → Variables`) or a **secret** with the same name.
+- `AIRFLOW_API_USERNAME` — **secret** (recommended).
+- `AIRFLOW_API_PASSWORD` — **secret** (recommended).
+
+If all three are empty in the workflow log, they were not defined for **this** repository (or the run is from a fork without secrets).
 
 ### Quick setup
 

@@ -92,11 +92,28 @@ jobs:
       - Linux
       - X64
       - vpn
+    env:
+      AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL || vars.AIRFLOW_API_URL }}
+      AIRFLOW_API_USERNAME: ${{ secrets.AIRFLOW_API_USERNAME }}
+      AIRFLOW_API_PASSWORD: ${{ secrets.AIRFLOW_API_PASSWORD }}
     steps:
+      - name: Airflow secret diagnostics (no values printed)
+        run: |
+          echo "repo=${GITHUB_REPOSITORY}"
+          echo "ref=${GITHUB_REF}"
+          echo "event=${GITHUB_EVENT_NAME}"
+          echo -n "AIRFLOW_API_URL: "
+          [ -n "${AIRFLOW_API_URL}" ] && echo "set" || echo "MISSING"
+          echo -n "AIRFLOW_API_USERNAME: "
+          [ -n "${AIRFLOW_API_USERNAME}" ] && echo "set" || echo "MISSING"
+          echo -n "AIRFLOW_API_PASSWORD: "
+          [ -n "${AIRFLOW_API_PASSWORD}" ] && echo "set" || echo "MISSING"
+          echo "Configure repository Secrets (and optionally Variables) under Settings → Secrets and variables → Actions."
+
       - name: Check Airflow secrets
         id: airflow_secrets
         env:
-          AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL }}
+          AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL || vars.AIRFLOW_API_URL }}
           AIRFLOW_API_USERNAME: ${{ secrets.AIRFLOW_API_USERNAME }}
           AIRFLOW_API_PASSWORD: ${{ secrets.AIRFLOW_API_PASSWORD }}
         run: |
@@ -111,7 +128,7 @@ jobs:
       - name: Trigger DAG run in Airflow
         if: steps.airflow_secrets.outputs.configured == 'true'
         env:
-          AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL }}
+          AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL || vars.AIRFLOW_API_URL }}
           AIRFLOW_API_USERNAME: ${{ secrets.AIRFLOW_API_USERNAME }}
           AIRFLOW_API_PASSWORD: ${{ secrets.AIRFLOW_API_PASSWORD }}
           DAG_ID: credit_model_retrain_from_github_actions
@@ -129,7 +146,7 @@ jobs:
       - name: Wait for retraining DAG to finish successfully
         if: steps.airflow_secrets.outputs.configured == 'true'
         env:
-          AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL }}
+          AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL || vars.AIRFLOW_API_URL }}
           AIRFLOW_API_USERNAME: ${{ secrets.AIRFLOW_API_USERNAME }}
           AIRFLOW_API_PASSWORD: ${{ secrets.AIRFLOW_API_PASSWORD }}
           DAG_ID: credit_model_retrain_from_github_actions
