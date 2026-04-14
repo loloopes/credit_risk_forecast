@@ -86,13 +86,25 @@ jobs:
     needs: cd
     if: >
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') &&
-      secrets.AIRFLOW_API_URL != '' &&
-      secrets.AIRFLOW_API_USERNAME != '' &&
-      secrets.AIRFLOW_API_PASSWORD != ''
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
+      - name: Check Airflow secrets
+        id: airflow_secrets
+        env:
+          AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL }}
+          AIRFLOW_API_USERNAME: ${{ secrets.AIRFLOW_API_USERNAME }}
+          AIRFLOW_API_PASSWORD: ${{ secrets.AIRFLOW_API_PASSWORD }}
+        run: |
+          if [ -z "${AIRFLOW_API_URL}" ] || [ -z "${AIRFLOW_API_USERNAME}" ] || [ -z "${AIRFLOW_API_PASSWORD}" ]; then
+            echo "configured=false" >> "${GITHUB_OUTPUT}"
+            echo "Airflow secrets are missing. Skipping DAG trigger."
+          else
+            echo "configured=true" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Trigger DAG run in Airflow
+        if: steps.airflow_secrets.outputs.configured == 'true'
         env:
           AIRFLOW_API_URL: ${{ secrets.AIRFLOW_API_URL }}
           AIRFLOW_API_USERNAME: ${{ secrets.AIRFLOW_API_USERNAME }}
