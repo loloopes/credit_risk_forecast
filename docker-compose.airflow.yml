@@ -13,12 +13,41 @@ x-airflow-common: &airflow-common
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     AIRFLOW_CONFIG: "/opt/airflow/config/airflow.cfg"
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+    TRAIN_DATA_PATH: ${TRAIN_DATA_PATH:-}
+    RAW_SUBMISSAO_PATH: ${RAW_SUBMISSAO_PATH:-s3://mlflow/data/base_submissao.parquet}
+    RAW_CADASTRAL_PATH: ${RAW_CADASTRAL_PATH:-s3://mlflow/data/base_cadastral.parquet}
+    RAW_EMPRESTIMOS_PATH: ${RAW_EMPRESTIMOS_PATH:-s3://mlflow/data/historico_emprestimos.parquet}
+    RAW_PARCELAS_PATH: ${RAW_PARCELAS_PATH:-s3://mlflow/data/historico_parcelas.parquet}
+    REFERENCE_DATA_PATH: ${REFERENCE_DATA_PATH:-s3://mlflow/data}
+    ANALYSIS_DATA_PATH: ${ANALYSIS_DATA_PATH:-s3://mlflow/actuals}
+    REFERENCE_SUFFIX: ${REFERENCE_SUFFIX:-.parquet}
+    ANALYSIS_SUFFIX: ${ANALYSIS_SUFFIX:-_new.parquet}
+    MONITOR_JOIN_ID_CLIENTE: ${MONITOR_JOIN_ID_CLIENTE:-id_cliente}
+    MONITOR_JOIN_ID_CONTRATO: ${MONITOR_JOIN_ID_CONTRATO:-id_contrato}
+    MONITOR_OUTPUT_PATH: ${MONITOR_OUTPUT_PATH:-s3://mlflow/artifacts/nannyml_drift_report.csv}
+    DRIFT_ALERT_THRESHOLD: ${DRIFT_ALERT_THRESHOLD:-0.7}
+    MONITOR_TIMESTAMP_COLUMN: ${MONITOR_TIMESTAMP_COLUMN:-data_decisao}
+    MONITOR_TARGET_COLUMN: ${MONITOR_TARGET_COLUMN:-target}
+    MONITOR_PREDICTION_COLUMN: ${MONITOR_PREDICTION_COLUMN:-prediction_proba}
+    MODEL_DECAY_MIN_AUC_DROP: ${MODEL_DECAY_MIN_AUC_DROP:-0.03}
+    PREDICTION_API_URL: ${PREDICTION_API_URL:-http://host.docker.internal:8000/predict}
+    REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-15}
+    MONITOR_MAX_ROWS: ${MONITOR_MAX_ROWS:-0}
+    NANNYML_EVAL_IMAGE: ${NANNYML_EVAL_IMAGE:-datarisk/nannyml-evaluator:latest}
+    NANNYML_DOCKER_NETWORK_MODE: ${NANNYML_DOCKER_NETWORK_MODE:-container:credit_scoring_api}
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - /var/run/docker.sock:/var/run/docker.sock
   user: "${AIRFLOW_UID:-50000}:0"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   depends_on: &airflow-common-depends-on
     redis:
       condition: service_healthy

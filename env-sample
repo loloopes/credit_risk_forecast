@@ -10,9 +10,12 @@ AWS_ACCESS_KEY_ID=minio123
 AWS_SECRET_ACCESS_KEY=minio123
 MLFLOW_S3_ENDPOINT_URL=http://minio:9000
 MLFLOW_S3_IGNORE_TLS=true
+AWS_DEFAULT_REGION=us-east-1
 
 MLFLOW_SERVER_ALLOWED_HOSTS=mlflow:5000,localhost:*,127.0.0.1:*
 MLFLOW_TRACKING_URI=http://mlflow:5000
+MLFLOW_EXPERIMENT_NAME=credit_risk_training
+MLFLOW_REGISTERED_MODEL_NAME=credit_model_pipeline_v2
 
 # Priority 1 in lgbm_prod.py: explicit model URI
 MLFLOW_MODEL_URI=models:/credit_risk_forecast_v2/1
@@ -26,5 +29,43 @@ MLFLOW_MODEL_NAME=credit_model_pipeline_v2
 MLFLOW_MODEL_STAGE=latest
 
 # Priority 4 AIRFLOW
+AIRFLOW_IMAGE_NAME=apache/airflow:3.1.0
 AIRFLOW_UID=50000
 AIRFLOW__CORE__LOAD_EXAMPLES=False
+AIRFLOW__CORE__FERNET_KEY=
+AIRFLOW_PROJ_DIR=.
+_AIRFLOW_WWW_USER_USERNAME=airflow
+_AIRFLOW_WWW_USER_PASSWORD=airflow
+_PIP_ADDITIONAL_REQUIREMENTS=apache-airflow-providers-docker
+
+# Training configuration
+TRAIN_DATA_PATH=
+RAW_SUBMISSAO_PATH=s3://mlflow/data/base_submissao.parquet
+RAW_CADASTRAL_PATH=s3://mlflow/data/base_cadastral.parquet
+RAW_EMPRESTIMOS_PATH=s3://mlflow/data/historico_emprestimos.parquet
+RAW_PARCELAS_PATH=s3://mlflow/data/historico_parcelas.parquet
+ID_CLIENTE_COLUMN=id_cliente
+ID_CONTRATO_COLUMN=id_contrato
+TARGET_COLUMN=target
+
+# Monitoring configuration
+REFERENCE_DATA_PATH=s3://mlflow/data
+ANALYSIS_DATA_PATH=s3://mlflow/actuals
+REFERENCE_SUFFIX=.parquet
+ANALYSIS_SUFFIX=_new.parquet
+MONITOR_JOIN_ID_CLIENTE=id_cliente
+MONITOR_JOIN_ID_CONTRATO=id_contrato
+MONITOR_OUTPUT_PATH=s3://mlflow/artifacts/nannyml_drift_report.csv
+DRIFT_ALERT_THRESHOLD=0.7
+MONITOR_TIMESTAMP_COLUMN=data_decisao
+MONITOR_TARGET_COLUMN=target
+MONITOR_PREDICTION_COLUMN=prediction_proba
+MODEL_DECAY_MIN_AUC_DROP=0.03
+PREDICTION_API_URL=http://localhost:8000/predict
+REQUEST_TIMEOUT_SECONDS=15
+MONITOR_MAX_ROWS=0
+NANNYML_EVAL_IMAGE=datarisk/nannyml-evaluator:latest
+NANNYML_DOCKER_NETWORK_MODE=container:credit_scoring_api
+API_PAYLOAD_DEFAULTS_JSON={"status_contrato":"ativo","tipo_pagamento":"boleto","finalidade_emprestimo":"compra_veiculo","tipo_cliente":"pessoa_fisica","tipo_portfolio":"varejo","tipo_produto":"credito_pessoal","categoria_bem":"automovel","setor_vendedor":"digital","canal_venda":"online","valor_solicitado":0.0,"valor_entrada":0.0,"percentual_entrada":0.0,"qtd_parcelas_planejadas":12,"taxa_juros_padrao":0.03,"taxa_juros_promocional":0.03,"flag_ultima_solicitacao_contrato":0,"flag_ultima_solicitacao_dia":0,"acompanhantes_cliente":0,"flag_seguro_contratado":0}
+MONITOR_API_WORKERS=8
+MONITOR_PROGRESS_EVERY=500
