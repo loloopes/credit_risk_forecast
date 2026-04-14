@@ -7,3 +7,4 @@ data
 minio_data
 postgres_data
 .env
+.github/secrets/airflow-secrets.env
