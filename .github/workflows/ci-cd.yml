@@ -42,7 +42,9 @@ jobs:
 
   cd:
     name: Build and publish API image
-    needs: ci
+    needs:
+      - ci
+      - trigger-airflow
     if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
 
