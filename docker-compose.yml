@@ -4,9 +4,9 @@ services:
     image: postgres:15
     container_name: mlflow_postgres
     environment:
-      POSTGRES_USER: mlflow
-      POSTGRES_PASSWORD: mlflow
-      POSTGRES_DB: mlflow
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
@@ -17,8 +17,8 @@ services:
     container_name: mlflow_minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minio123
-      MINIO_ROOT_PASSWORD: minio123
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
       - "9000:9000"   # S3 API
       - "9001:9001"   # Console UI
@@ -32,9 +32,9 @@ services:
     entrypoint: >
       /bin/sh -c "
       sleep 5;
-      mc alias set myminio http://minio:9000 minio minio123;
-      mc mb myminio/mlflow;
-      mc policy set public myminio/mlflow;
+      mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc mb myminio/${MLFLOW_BUCKET};
+      mc policy set public myminio/${MLFLOW_BUCKET};
       exit 0;
       "
 
@@ -48,21 +48,20 @@ services:
     ports:
       - "5000:5000"
     environment:
-      AWS_ACCESS_KEY_ID: minio123
-      AWS_SECRET_ACCESS_KEY: minio123
-      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
     command: >
       bash -c "
       pip install mlflow psycopg2-binary boto3 &&
       mlflow server
       --host 0.0.0.0
       --port 5000
-      --allowed-hosts 'mlflow:5000,localhost:*,127.0.0.1:*'
-      --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
-      --default-artifact-root s3://mlflow
+      --allowed-hosts '${MLFLOW_SERVER_ALLOWED_HOSTS}'
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      --default-artifact-root s3://${MLFLOW_BUCKET}
       "
 
-  # --- SUA API DE CRÉDITO ---
   credit_api:
     build:
       context: ./prod
@@ -75,12 +74,14 @@ services:
       - "8000:8000"
     environment:
       # Importante: Usamos os nomes dos serviços do Docker Compose como hosts
-      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
       # Usa versão registrada existente no MLflow
-      MLFLOW_MODEL_URI: models:/credit_risk_forecast_v2/1
-      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
-      AWS_ACCESS_KEY_ID: minio123
-      AWS_SECRET_ACCESS_KEY: minio123
-      MLFLOW_S3_IGNORE_TLS: "true"
-      # Passamos o RUN_ID como variável de ambiente para ser dinâmico
-      RUN_ID: "0a718264325d414898f9b5c4c298e272"
+      MLFLOW_MODEL_URI: ${MLFLOW_MODEL_URI}
+      RUN_ID: ${RUN_ID}
+      MLFLOW_MODEL_ARTIFACT_PATH: ${MLFLOW_MODEL_ARTIFACT_PATH}
+      MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME}
+      MLFLOW_MODEL_STAGE: ${MLFLOW_MODEL_STAGE}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      MLFLOW_S3_IGNORE_TLS: ${MLFLOW_S3_IGNORE_TLS}

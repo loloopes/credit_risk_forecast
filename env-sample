@@ -1,0 +1,26 @@
+POSTGRES_USER=mlflow
+POSTGRES_PASSWORD=mlflow
+POSTGRES_DB=mlflow
+
+MINIO_ROOT_USER=minio123
+MINIO_ROOT_PASSWORD=minio123
+MLFLOW_BUCKET=mlflow
+
+AWS_ACCESS_KEY_ID=minio123
+AWS_SECRET_ACCESS_KEY=minio123
+MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+MLFLOW_S3_IGNORE_TLS=true
+
+MLFLOW_SERVER_ALLOWED_HOSTS=mlflow:5000,localhost:*,127.0.0.1:*
+MLFLOW_TRACKING_URI=http://mlflow:5000
+
+# Priority 1 in lgbm_prod.py: explicit model URI
+MLFLOW_MODEL_URI=models:/credit_risk_forecast_v2/1
+
+# Priority 2 in lgbm_prod.py: runs:/<RUN_ID>/<MLFLOW_MODEL_ARTIFACT_PATH>
+RUN_ID=c2168f44d1a742f5bf1b2f120e6b1dfa
+MLFLOW_MODEL_ARTIFACT_PATH=credit_model_pipeline_v2
+
+# Priority 3 in lgbm_prod.py: models:/<MLFLOW_MODEL_NAME>/<MLFLOW_MODEL_STAGE>
+MLFLOW_MODEL_NAME=credit_model_pipeline_v2
+MLFLOW_MODEL_STAGE=latest

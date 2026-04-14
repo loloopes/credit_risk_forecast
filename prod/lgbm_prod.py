@@ -28,11 +28,11 @@ try:
         model_uri = f"runs:/{RUN_ID}/{MLFLOW_MODEL_ARTIFACT_PATH}"
     if not model_uri:
         model_uri = f"models:/{MLFLOW_MODEL_NAME}/{MLFLOW_MODEL_STAGE}"
-    print(f"Carregando modelo do MLflow: {model_uri}...", flush=True)
+    print(f"Loading model from mlflow: {model_uri}...", flush=True)
     model = mlflow.sklearn.load_model(model_uri=model_uri)
-    print("Modelo carregado com sucesso!", flush=True)
+    print("Model loaded successfully!", flush=True)
 except Exception as e:
-    print(f"Erro crítico ao carregar modelo: {e}", flush=True)
+    print(f"Error loading model: {e}", flush=True)
     model = None
 
 # ==========================================

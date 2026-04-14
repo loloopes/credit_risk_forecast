@@ -6,3 +6,4 @@ data
 .vfscache
 minio_data
 postgres_data
+.env
