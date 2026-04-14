@@ -3,8 +3,8 @@ import json
 import os
 
 from airflow.decorators import dag, task
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.docker.operators.docker import DockerOperator
-
 
 def _monitoring_env() -> dict:
     return {
@@ -25,30 +25,6 @@ def _monitoring_env() -> dict:
         "PREDICTION_API_URL": os.getenv("PREDICTION_API_URL", "http://localhost:8000/predict"),
         "REQUEST_TIMEOUT_SECONDS": os.getenv("REQUEST_TIMEOUT_SECONDS", "15"),
         "MONITOR_MAX_ROWS": os.getenv("MONITOR_MAX_ROWS", "0"),
-        "MLFLOW_S3_ENDPOINT_URL": os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://minio:9000"),
-        "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", ""),
-        "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", ""),
-        "AWS_DEFAULT_REGION": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
-    }
-
-
-def _training_env() -> dict:
-    return {
-        "TRAIN_DATA_PATH": os.getenv("TRAIN_DATA_PATH", ""),
-        "RAW_SUBMISSAO_PATH": os.getenv("RAW_SUBMISSAO_PATH", "s3://mlflow/data/base_submissao.parquet"),
-        "RAW_CADASTRAL_PATH": os.getenv("RAW_CADASTRAL_PATH", "s3://mlflow/data/base_cadastral.parquet"),
-        "RAW_EMPRESTIMOS_PATH": os.getenv(
-            "RAW_EMPRESTIMOS_PATH", "s3://mlflow/data/historico_emprestimos.parquet"
-        ),
-        "RAW_PARCELAS_PATH": os.getenv("RAW_PARCELAS_PATH", "s3://mlflow/data/historico_parcelas.parquet"),
-        "ID_CLIENTE_COLUMN": os.getenv("ID_CLIENTE_COLUMN", "id_cliente"),
-        "ID_CONTRATO_COLUMN": os.getenv("ID_CONTRATO_COLUMN", "id_contrato"),
-        "TARGET_COLUMN": os.getenv("TARGET_COLUMN", "target"),
-        "MLFLOW_TRACKING_URI": os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"),
-        "MLFLOW_EXPERIMENT_NAME": os.getenv("MLFLOW_EXPERIMENT_NAME", "credit_risk_training"),
-        "MLFLOW_REGISTERED_MODEL_NAME": os.getenv(
-            "MLFLOW_REGISTERED_MODEL_NAME", "credit_model_pipeline_v2"
-        ),
         "MLFLOW_S3_ENDPOINT_URL": os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://minio:9000"),
         "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", ""),
         "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", ""),
@@ -90,21 +66,22 @@ def credit_model_training_and_nannyml_monitoring():
         except Exception:
             result = {"should_retrain": False}
         if result.get("should_retrain"):
-            return "train_and_register_model"
+            return "trigger_retrain_on_decay_or_drift"
         return "skip_retraining"
 
-    @task.bash(task_id="train_and_register_model", env=_training_env())
-    def train_and_register_model() -> str:
-        return "python /opt/airflow/dags/pipelines/train_model.py"
+    trigger_retrain_on_decay_or_drift = TriggerDagRunOperator(
+        task_id="trigger_retrain_on_decay_or_drift",
+        trigger_dag_id="credit_model_retrain_on_decay_or_drift",
+        wait_for_completion=False,
+    )
 
     @task(task_id="skip_retraining")
     def skip_retraining():
         print("No drift above threshold. Retraining skipped.", flush=True)
 
     decision = decide_retraining(monitor_with_nannyml_api.output)
-    train_task = train_and_register_model()
     skip_task = skip_retraining()
 
-    decision >> [train_task, skip_task]
+    decision >> [trigger_retrain_on_decay_or_drift, skip_task]
 
 dag = credit_model_training_and_nannyml_monitoring()
