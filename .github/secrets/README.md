@@ -10,7 +10,7 @@ If all three are empty in the workflow log, they were not defined for **this** r
 
 ### Quick setup
 
-1. Copy the template:>
+1. Copy the template:
 
 ```bash
 cp .github/secrets/airflow-secrets.env.example .github/secrets/airflow-secrets.env
