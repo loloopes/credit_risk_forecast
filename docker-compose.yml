@@ -57,6 +57,7 @@ services:
       mlflow server
       --host 0.0.0.0
       --port 5000
+      --allowed-hosts 'mlflow:5000,localhost:*,127.0.0.1:*'
       --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
       --default-artifact-root s3://mlflow
       "
@@ -75,9 +76,11 @@ services:
     environment:
       # Importante: Usamos os nomes dos serviços do Docker Compose como hosts
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      # Usa versão registrada existente no MLflow
+      MLFLOW_MODEL_URI: models:/credit_risk_forecast_v2/1
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
       AWS_ACCESS_KEY_ID: minio123
       AWS_SECRET_ACCESS_KEY: minio123
       MLFLOW_S3_IGNORE_TLS: "true"
       # Passamos o RUN_ID como variável de ambiente para ser dinâmico
-      RUN_ID: "654bc08bc8194392822cd24b8549fa4f"
+      RUN_ID: "0a718264325d414898f9b5c4c298e272"

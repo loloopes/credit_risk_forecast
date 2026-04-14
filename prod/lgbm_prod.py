@@ -1,6 +1,7 @@
-import pickle
+import os
 from typing import Optional
 
+import mlflow
 import pandas as pd
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -9,15 +10,26 @@ from pydantic import BaseModel
 app = FastAPI(title="Datarisk Credit Scoring API")
 
 # ==========================================
-# Carregamento do modelo (Pipeline: fe + LGBM, exportado no notebook com cloudpickle)
+# Carregamento do modelo via MLflow Model Registry
 # ==========================================
 
-MODEL_PATH = "credit_model_pipeline.pkl"
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_MODEL_URI = os.getenv("MLFLOW_MODEL_URI")
+RUN_ID = os.getenv("RUN_ID")
+MLFLOW_MODEL_ARTIFACT_PATH = os.getenv("MLFLOW_MODEL_ARTIFACT_PATH", "credit_model_pipeline_v2")
+MLFLOW_MODEL_NAME = os.getenv("MLFLOW_MODEL_NAME", "credit_model_pipeline_v2")
+MLFLOW_MODEL_STAGE = os.getenv("MLFLOW_MODEL_STAGE", "latest")
 
 try:
-    print(f"Carregando modelo local de: {MODEL_PATH}...", flush=True)
-    with open(MODEL_PATH, "rb") as f:
-        model = pickle.load(f)
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+    model_uri = MLFLOW_MODEL_URI
+    if not model_uri and RUN_ID:
+        model_uri = f"runs:/{RUN_ID}/{MLFLOW_MODEL_ARTIFACT_PATH}"
+    if not model_uri:
+        model_uri = f"models:/{MLFLOW_MODEL_NAME}/{MLFLOW_MODEL_STAGE}"
+    print(f"Carregando modelo do MLflow: {model_uri}...", flush=True)
+    model = mlflow.sklearn.load_model(model_uri=model_uri)
     print("Modelo carregado com sucesso!", flush=True)
 except Exception as e:
     print(f"Erro crítico ao carregar modelo: {e}", flush=True)
@@ -82,7 +94,7 @@ class CreditApplication(BaseModel):
 @app.post("/predict")
 async def predict(application: CreditApplication):
     if model is None:
-        raise HTTPException(status_code=500, detail="Modelo não carregado no servidor local.")
+        raise HTTPException(status_code=500, detail="Modelo não carregado no servidor.")
 
     try:
         input_df = pd.DataFrame([application.model_dump()])
