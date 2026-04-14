@@ -137,11 +137,20 @@ jobs:
           AIRFLOW_API_URL="${AIRFLOW_API_URL%/}"
           echo "DAG_RUN_ID=${DAG_RUN_ID}" >> "${GITHUB_ENV}"
           echo "Triggering DAG '${DAG_ID}' with run id '${DAG_RUN_ID}'"
+
+          # Airflow 3 public API uses JWT (Bearer), not HTTP Basic — see /auth/token
+          TOKEN_JSON="$(curl --fail --silent --show-error \
+            -X POST "${AIRFLOW_API_URL}/auth/token" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"${AIRFLOW_API_USERNAME}\",\"password\":\"${AIRFLOW_API_PASSWORD}\"}")"
+          TOKEN="$(python -c 'import json,sys; print(json.loads(sys.stdin.read())["access_token"])' <<< "${TOKEN_JSON}")"
+
+          LOGICAL_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           curl --fail --silent --show-error \
-            --user "${AIRFLOW_API_USERNAME}:${AIRFLOW_API_PASSWORD}" \
+            -H "Authorization: Bearer ${TOKEN}" \
             -H "Content-Type: application/json" \
             -X POST "${AIRFLOW_API_URL}/api/v2/dags/${DAG_ID}/dagRuns" \
-            -d "{\"dag_run_id\":\"${DAG_RUN_ID}\",\"conf\":{\"triggered_by\":\"github_actions\",\"sha\":\"${GITHUB_SHA}\"}}"
+            -d "{\"dag_run_id\":\"${DAG_RUN_ID}\",\"logical_date\":\"${LOGICAL_DATE}\",\"conf\":{\"triggered_by\":\"github_actions\",\"sha\":\"${GITHUB_SHA}\"}}"
 
       - name: Wait for retraining DAG to finish successfully
         if: steps.airflow_secrets.outputs.configured == 'true'
@@ -155,9 +164,19 @@ jobs:
           MAX_ATTEMPTS=60
           SLEEP_SECONDS=30
 
+          airflow_token() {
+            curl --fail --silent --show-error \
+              -X POST "${AIRFLOW_API_URL}/auth/token" \
+              -H "Content-Type: application/json" \
+              -d "{\"username\":\"${AIRFLOW_API_USERNAME}\",\"password\":\"${AIRFLOW_API_PASSWORD}\"}"
+          }
+
           for ATTEMPT in $(seq 1 "${MAX_ATTEMPTS}"); do
+            TOKEN_JSON="$(airflow_token)"
+            TOKEN="$(python -c 'import json,sys; print(json.loads(sys.stdin.read())["access_token"])' <<< "${TOKEN_JSON}")"
+
             RESPONSE="$(curl --fail --silent --show-error \
-              --user "${AIRFLOW_API_USERNAME}:${AIRFLOW_API_PASSWORD}" \
+              -H "Authorization: Bearer ${TOKEN}" \
               -H "Content-Type: application/json" \
               "${AIRFLOW_API_URL}/api/v2/dags/${DAG_ID}/dagRuns/${DAG_RUN_ID}")"
 

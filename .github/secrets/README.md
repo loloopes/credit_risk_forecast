@@ -34,3 +34,4 @@ bash scripts/sync-github-airflow-secrets.sh /path/to/airflow-secrets.env
 
 - Keep `.github/secrets/airflow-secrets.env` private; do not commit it.
 - The self-hosted runner still needs network access to `AIRFLOW_API_URL` (VPN/tunnel).
+- **Airflow 3** public REST API uses **JWT** (`POST /auth/token` then `Authorization: Bearer ...`). HTTP Basic auth against `/api/v2/...` returns **401**.
