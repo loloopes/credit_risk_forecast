@@ -17,6 +17,18 @@ MLFLOW_TRACKING_URI=http://mlflow:5000
 MLFLOW_EXPERIMENT_NAME=credit_risk_training
 MLFLOW_REGISTERED_MODEL_NAME=credit_model_pipeline_v2
 
+# Registry promotion gate (train_model.py): new runs log to MLflow always; a new
+# Model Registry version is created only if the gate passes. Champion valid_auc is
+# read from the latest Production model, else from the highest registered version.
+# MLFLOW_GATE_MAX_AUC_REGRESSION defaults to 0.005 when unset (allowed drop vs champion).
+# MLFLOW_EXIT_ON_GATE_FAILURE defaults to true (process exits 1 if registration skipped).
+# MLFLOW_PROMOTION_GATE_DISABLED=true bypasses relative/min checks (still logs).
+# MLFLOW_GATE_MIN_VALID_AUC=0.65
+# MLFLOW_GATE_MAX_AUC_REGRESSION=0.01
+# MLFLOW_GATE_REQUIRE_IMPROVEMENT=false
+# MLFLOW_EXIT_ON_GATE_FAILURE=true
+# MLFLOW_PROMOTION_GATE_DISABLED=false
+
 # Priority 1 in lgbm_prod.py: explicit model URI
 MLFLOW_MODEL_URI=models:/credit_risk_forecast_v2/1
 

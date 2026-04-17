@@ -20,6 +20,11 @@ def get_training_env() -> dict:
         "MLFLOW_REGISTERED_MODEL_NAME": os.getenv(
             "MLFLOW_REGISTERED_MODEL_NAME", "credit_model_pipeline_v2"
         ),
+        "MLFLOW_PROMOTION_GATE_DISABLED": os.getenv("MLFLOW_PROMOTION_GATE_DISABLED", ""),
+        "MLFLOW_GATE_MIN_VALID_AUC": os.getenv("MLFLOW_GATE_MIN_VALID_AUC", ""),
+        "MLFLOW_GATE_MAX_AUC_REGRESSION": os.getenv("MLFLOW_GATE_MAX_AUC_REGRESSION", ""),
+        "MLFLOW_GATE_REQUIRE_IMPROVEMENT": os.getenv("MLFLOW_GATE_REQUIRE_IMPROVEMENT", ""),
+        "MLFLOW_EXIT_ON_GATE_FAILURE": os.getenv("MLFLOW_EXIT_ON_GATE_FAILURE", ""),
         "MLFLOW_S3_ENDPOINT_URL": os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://minio:9000"),
         "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", ""),
         "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", ""),

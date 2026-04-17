@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -7,6 +8,7 @@ from urllib.parse import urlparse
 import boto3
 import mlflow
 import mlflow.sklearn
+from mlflow.tracking import MlflowClient
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
@@ -177,6 +179,101 @@ _TARGET_COLUMN_FALLBACKS: tuple[str, ...] = (
 )
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _env_optional_float(name: str) -> float | None:
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return None
+    return float(str(raw).strip())
+
+
+def _fetch_run_valid_auc(client: MlflowClient, run_id: str) -> float | None:
+    try:
+        run = client.get_run(run_id)
+        metric = run.data.metrics.get("valid_auc")
+        if metric is None:
+            return None
+        return float(metric)
+    except Exception:
+        return None
+
+
+def _champion_auc_from_version(client: MlflowClient, mv) -> tuple[float | None, str]:
+    auc = _fetch_run_valid_auc(client, mv.run_id)
+    stage = mv.current_stage or "None"
+    desc = f"v{mv.version} stage={stage} run_id={mv.run_id}"
+    return auc, desc
+
+
+def _resolve_champion_valid_auc(
+    client: MlflowClient, model_name: str
+) -> tuple[float | None, str | None]:
+    """
+    Champion metric for gating: latest Production, else highest registered version (any stage).
+    Returns (valid_auc, human-readable source) or (None, None) if no usable champion.
+    """
+    try:
+        prod_versions = client.get_latest_versions(model_name, stages=["Production"])
+    except Exception:
+        prod_versions = []
+    if prod_versions:
+        auc, desc = _champion_auc_from_version(client, prod_versions[0])
+        label = f"Production: {desc}"
+        return auc, label
+
+    try:
+        versions = client.search_model_versions(f"name='{model_name}'")
+    except Exception:
+        versions = []
+    if not versions:
+        return None, None
+    latest = max(versions, key=lambda v: int(v.version))
+    auc, desc = _champion_auc_from_version(client, latest)
+    label = f"latest registered: {desc}"
+    return auc, label
+
+
+def _evaluate_promotion_gate(new_auc: float, champion_auc: float | None, champion_label: str | None) -> tuple[bool, str]:
+    if _env_bool("MLFLOW_PROMOTION_GATE_DISABLED", False):
+        return True, "promotion gate disabled (MLFLOW_PROMOTION_GATE_DISABLED)"
+
+    min_auc = _env_optional_float("MLFLOW_GATE_MIN_VALID_AUC")
+    if min_auc is not None and new_auc < min_auc:
+        return (
+            False,
+            f"valid_auc {new_auc:.6f} below MLFLOW_GATE_MIN_VALID_AUC={min_auc}",
+        )
+
+    if champion_auc is None:
+        return True, "no champion valid_auc (first registration or missing run metric); relative checks skipped"
+
+    max_drop = _env_optional_float("MLFLOW_GATE_MAX_AUC_REGRESSION")
+    if max_drop is None:
+        max_drop = 0.005
+    floor_auc = champion_auc - max_drop
+    if new_auc < floor_auc:
+        return (
+            False,
+            f"valid_auc {new_auc:.6f} below champion floor {floor_auc:.6f} "
+            f"(champion {champion_auc:.6f} via {champion_label}; "
+            f"MLFLOW_GATE_MAX_AUC_REGRESSION={max_drop})",
+        )
+
+    if _env_bool("MLFLOW_GATE_REQUIRE_IMPROVEMENT", False) and new_auc <= champion_auc:
+        return (
+            False,
+            f"MLFLOW_GATE_REQUIRE_IMPROVEMENT: need valid_auc > champion {champion_auc:.6f} ({champion_label})",
+        )
+
+    return True, f"passed vs champion {champion_auc:.6f} ({champion_label})"
+
+
 def _resolve_target_column(df: pd.DataFrame) -> str:
     preferred = (os.getenv("TARGET_COLUMN") or "").strip()
     if preferred and preferred in df.columns:
@@ -212,7 +309,7 @@ def _resolve_target_column(df: pd.DataFrame) -> str:
 
 def main() -> None:
     dataset_uri = os.getenv("TRAIN_DATA_PATH", "").strip()
-    experiment_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "credit_Prisk_training")
+    experiment_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "credit_risk_training")
     model_name = os.getenv("MLFLOW_REGISTERED_MODEL_NAME", "credit_model_pipeline_v2")
     mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 
@@ -255,6 +352,7 @@ def main() -> None:
 
     mlflow.set_tracking_uri(mlflow_tracking_uri)
     mlflow.set_experiment(experiment_name)
+    registry_client = MlflowClient(tracking_uri=mlflow_tracking_uri)
 
     with mlflow.start_run() as run:
         mlflow.set_tag("training_started_at_utc", datetime.now(timezone.utc).isoformat())
@@ -281,16 +379,39 @@ def main() -> None:
             mlflow.log_metric(f"valid_recall_class_{lbl}", float(recalls[i]))
             mlflow.log_metric(f"valid_f1_class_{lbl}", float(f1s[i]))
 
+        champion_auc, champion_label = _resolve_champion_valid_auc(registry_client, model_name)
+        if champion_auc is not None:
+            mlflow.log_param("promotion_champion_valid_auc", champion_auc)
+        if champion_label:
+            mlflow.set_tag("promotion_champion_source", champion_label[:500])
+
+        gate_ok, gate_message = _evaluate_promotion_gate(auc, champion_auc, champion_label)
+        mlflow.set_tag("promotion_gate_passed", "true" if gate_ok else "false")
+        mlflow.set_tag("promotion_gate_message", gate_message[:1000])
+
         model_info = mlflow.sklearn.log_model(
             sk_model=model,
             artifact_path="model",
         )
         model_uri = f"runs:/{run.info.run_id}/model"
+        mlflow.set_tag("logged_model_uri", model_info.model_uri)
+
+        if not gate_ok:
+            mlflow.set_tag("registry_registration", "skipped")
+            print(
+                f"Training finished. Validation AUC: {auc:.4f}. "
+                f"MLflow run {run.info.run_id} logged; registry registration skipped. {gate_message}",
+                flush=True,
+            )
+            if _env_bool("MLFLOW_EXIT_ON_GATE_FAILURE", True):
+                sys.exit(1)
+            return
+
         model_version = mlflow.register_model(model_uri=model_uri, name=model_name)
 
+        mlflow.set_tag("registry_registration", "registered")
         mlflow.set_tag("registered_model_name", model_name)
         mlflow.set_tag("registered_model_version", model_version.version)
-        mlflow.set_tag("logged_model_uri", model_info.model_uri)
 
         print(
             f"Training finished. Validation AUC: {auc:.4f}. "
