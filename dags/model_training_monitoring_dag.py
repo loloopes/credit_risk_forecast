@@ -2,8 +2,8 @@ from datetime import datetime
 import json
 import os
 
-from airflow.decorators import dag, task
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.sdk import dag, task
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 
 def _monitoring_env() -> dict:
@@ -45,7 +45,6 @@ def credit_model_training_and_nannyml_monitoring():
         task_id="monitor_with_nannyml_api",
         image=os.getenv("NANNYML_EVAL_IMAGE", "datarisk/nannyml-evaluator:latest"),
         user="root",
-        container_name="nannyml",
         api_version="auto",
         auto_remove="success",
         docker_url="unix://var/run/docker.sock",

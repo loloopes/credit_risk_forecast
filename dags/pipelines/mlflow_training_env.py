@@ -20,6 +20,8 @@ def get_training_env() -> dict:
         "MLFLOW_REGISTERED_MODEL_NAME": os.getenv(
             "MLFLOW_REGISTERED_MODEL_NAME", "credit_model_pipeline_v2"
         ),
+        "LGBM_CLASSIFIER_PARAMS_PATH": os.getenv("LGBM_CLASSIFIER_PARAMS_PATH", ""),
+        "LGBM_CLASSIFIER_PARAMS_JSON": os.getenv("LGBM_CLASSIFIER_PARAMS_JSON", ""),
         "MLFLOW_PROMOTION_GATE_DISABLED": os.getenv("MLFLOW_PROMOTION_GATE_DISABLED", ""),
         "MLFLOW_GATE_MIN_VALID_AUC": os.getenv("MLFLOW_GATE_MIN_VALID_AUC", ""),
         "MLFLOW_GATE_MAX_AUC_REGRESSION": os.getenv("MLFLOW_GATE_MAX_AUC_REGRESSION", ""),

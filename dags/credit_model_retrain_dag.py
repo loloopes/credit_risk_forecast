@@ -4,7 +4,7 @@ from datetime import datetime
 
 from airflow.sdk import dag, task
 
-from mlflow_training_env import get_training_env
+from pipelines.mlflow_training_env import get_training_env
 
 
 @dag(

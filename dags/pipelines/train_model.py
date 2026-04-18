@@ -1,8 +1,10 @@
+import json
 import os
 import sys
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import boto3
@@ -193,6 +195,62 @@ def _env_optional_float(name: str) -> float | None:
     return float(str(raw).strip())
 
 
+def _default_lgbm_classifier_params() -> dict[str, Any]:
+    return {"random_state": 42, "n_estimators": 300}
+
+
+def _load_json_object_from_uri(uri: str) -> dict[str, Any]:
+    if _is_s3_path(uri):
+        bucket, key = _parse_s3_uri(uri)
+        s3_client = _build_s3_client()
+        obj = s3_client.get_object(Bucket=bucket, Key=key)
+        raw = obj["Body"].read().decode("utf-8")
+    else:
+        path = Path(uri).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"LGBM classifier params file not found: {uri}")
+        raw = path.read_text(encoding="utf-8")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in LGBM params ({uri}): {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"LGBM classifier params JSON must be an object, got {type(data).__name__}")
+    return data
+
+
+def _resolve_lgbm_classifier_params() -> tuple[dict[str, Any], str]:
+    """
+    Merge Optuna/exported hyperparameters over defaults.
+
+    Precedence (later wins): defaults < LGBM_CLASSIFIER_PARAMS_PATH < LGBM_CLASSIFIER_PARAMS_JSON.
+    Export Optuna via: json.dump(study.best_params, open("lgbm_params.json", "w"))
+    """
+    merged: dict[str, Any] = dict(_default_lgbm_classifier_params())
+    parts: list[str] = ["defaults"]
+
+    path_uri = (os.getenv("LGBM_CLASSIFIER_PARAMS_PATH") or "").strip()
+    if path_uri:
+        loaded = _load_json_object_from_uri(path_uri)
+        merged.update(loaded)
+        parts.append(f"path:{path_uri}")
+
+    inline = (os.getenv("LGBM_CLASSIFIER_PARAMS_JSON") or "").strip()
+    if inline:
+        try:
+            loaded = json.loads(inline)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in LGBM_CLASSIFIER_PARAMS_JSON: {e}") from e
+        if not isinstance(loaded, dict):
+            raise ValueError(
+                "LGBM_CLASSIFIER_PARAMS_JSON must be a JSON object (e.g. Optuna best_params)."
+            )
+        merged.update(loaded)
+        parts.append("env:LGBM_CLASSIFIER_PARAMS_JSON")
+
+    return merged, "+".join(parts)
+
+
 def _fetch_run_valid_auc(client: MlflowClient, run_id: str) -> float | None:
     try:
         run = client.get_run(run_id)
@@ -343,10 +401,11 @@ def main() -> None:
         ]
     )
 
+    lgbm_params, lgbm_params_source = _resolve_lgbm_classifier_params()
     model = Pipeline(
         steps=[
             ("preprocessor", preprocessor),
-            ("classifier", LGBMClassifier(random_state=42, n_estimators=300)),
+            ("classifier", LGBMClassifier(**lgbm_params)),
         ]
     )
 
@@ -356,6 +415,9 @@ def main() -> None:
 
     with mlflow.start_run() as run:
         mlflow.set_tag("training_started_at_utc", datetime.now(timezone.utc).isoformat())
+        mlflow.log_param("lgbm_classifier_params_source", lgbm_params_source[:500])
+        for name, value in sorted(lgbm_params.items()):
+            mlflow.log_param(f"lgbm_{name}", value if isinstance(value, (int, float, bool)) else str(value))
         model.fit(X_train, y_train)
         y_valid_pred = model.predict(X_valid)
         y_valid_proba = model.predict_proba(X_valid)[:, 1]
