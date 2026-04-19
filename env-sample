@@ -29,12 +29,12 @@ MLFLOW_REGISTERED_MODEL_NAME=credit_model_pipeline_v2
 # MLFLOW_EXIT_ON_GATE_FAILURE=true
 # MLFLOW_PROMOTION_GATE_DISABLED=false
 
-# Priority 1 in lgbm_prod.py: explicit model URI
-MLFLOW_MODEL_URI=models:/credit_risk_forecast_v2/1
+# Priority 1 in lgbm_prod.py: explicit model URI (name must match MLFLOW_REGISTERED_MODEL_NAME / registry)
+MLFLOW_MODEL_URI=models:/credit_model_pipeline_v2/latest
 
 # Priority 2 in lgbm_prod.py: runs:/<RUN_ID>/<MLFLOW_MODEL_ARTIFACT_PATH>
 RUN_ID=c2168f44d1a742f5bf1b2f120e6b1dfa
-MLFLOW_MODEL_ARTIFACT_PATH=credit_model_pipeline_v2
+MLFLOW_MODEL_ARTIFACT_PATH=model
 
 # Priority 3 in lgbm_prod.py: models:/<MLFLOW_MODEL_NAME>/<MLFLOW_MODEL_STAGE>
 MLFLOW_MODEL_NAME=credit_model_pipeline_v2

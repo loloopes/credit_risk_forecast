@@ -9,5 +9,8 @@ postgres_data
 .env
 .github/secrets/airflow-secrets.env
 
+# PySpark on Windows: auto-downloaded winutils (see lgbm_test.ipynb)
+.spark-hadoop/
+
 # Airflow local / bind-mounted task logs (dag_id=…/run_id=…/attempt=…)
 logs/
