@@ -15,7 +15,7 @@ AWS_DEFAULT_REGION=us-east-1
 MLFLOW_SERVER_ALLOWED_HOSTS=mlflow:5000,localhost:*,127.0.0.1:*
 MLFLOW_TRACKING_URI=http://mlflow:5000
 MLFLOW_EXPERIMENT_NAME=credit_risk_training
-MLFLOW_REGISTERED_MODEL_NAME=credit_model_pipeline_v2
+MLFLOW_REGISTERED_MODEL_NAME=credit_riks_forecast
 
 # Registry promotion gate (train_model.py): new runs log to MLflow always; a new
 # Model Registry version is created only if the gate passes. Champion valid_auc is
@@ -29,15 +29,17 @@ MLFLOW_REGISTERED_MODEL_NAME=credit_model_pipeline_v2
 # MLFLOW_EXIT_ON_GATE_FAILURE=true
 # MLFLOW_PROMOTION_GATE_DISABLED=false
 
-# Priority 1 in lgbm_prod.py: explicit model URI (name must match MLFLOW_REGISTERED_MODEL_NAME / registry)
-MLFLOW_MODEL_URI=models:/credit_model_pipeline_v2/latest
+# Priority 1 in lgbm_prod.py: explicit model URI(s). Comma-separated fallbacks are supported.
+# Your UI may show slightly different spellings depending on where you look; include both if unsure.
+MLFLOW_MODEL_URI=models:/credit_risk_forecast/1,models:/credit_riks_forecast/1
 
 # Priority 2 in lgbm_prod.py: runs:/<RUN_ID>/<MLFLOW_MODEL_ARTIFACT_PATH>
-RUN_ID=c2168f44d1a742f5bf1b2f120e6b1dfa
-MLFLOW_MODEL_ARTIFACT_PATH=model
+RUN_ID=1d9e5e1c73e94fa4ad66662d9e7c7b4b
+# lgbm_test.ipynb logs with artifact_path "credit_model_pipeline_v2"; Airflow train_model.py uses "model"
+MLFLOW_MODEL_ARTIFACT_PATH=credit_model_pipeline_v2
 
 # Priority 3 in lgbm_prod.py: models:/<MLFLOW_MODEL_NAME>/<MLFLOW_MODEL_STAGE>
-MLFLOW_MODEL_NAME=credit_model_pipeline_v2
+MLFLOW_MODEL_NAME=credit_riks_forecast
 MLFLOW_MODEL_STAGE=latest
 
 # Priority 4 AIRFLOW

@@ -14,3 +14,7 @@ postgres_data
 
 # Airflow local / bind-mounted task logs (dag_id=…/run_id=…/attempt=…)
 logs/
+*.pkl
+__pycache__/
+*.py[cod]
+*.pyc

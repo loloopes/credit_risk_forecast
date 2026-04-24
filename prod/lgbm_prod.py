@@ -1,6 +1,5 @@
 import os
-import traceback
-from typing import Optional
+from typing import Iterable, Optional
 
 import mlflow
 import pandas as pd
@@ -22,6 +21,73 @@ MLFLOW_MODEL_NAME = os.getenv("MLFLOW_MODEL_NAME", "credit_model_pipeline_v2")
 MLFLOW_MODEL_STAGE = os.getenv("MLFLOW_MODEL_STAGE", "latest")
 SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD", "false").lower() in {"1", "true", "yes"}
 
+
+def _empty_to_none(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _split_model_uris(raw: str) -> list[str]:
+    # Allow multiple fallbacks, e.g.:
+    # MLFLOW_MODEL_URI="models:/credit_risk_forecast/1,models:/credit_riks_forecast/1"
+    parts: list[str] = []
+    for chunk in raw.replace(";", ",").split(","):
+        uri = chunk.strip()
+        if uri:
+            parts.append(uri)
+    return parts
+
+
+def _dedupe_preserve_order(uris: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for uri in uris:
+        if uri in seen:
+            continue
+        seen.add(uri)
+        out.append(uri)
+    return out
+
+
+def _iter_candidate_model_uris() -> list[str]:
+    uris: list[str] = []
+
+    explicit = _empty_to_none(MLFLOW_MODEL_URI)
+    if explicit:
+        uris.extend(_split_model_uris(explicit))
+
+    run_id = _empty_to_none(RUN_ID)
+    if run_id:
+        artifact_path = _empty_to_none(MLFLOW_MODEL_ARTIFACT_PATH)
+        if artifact_path:
+            uris.append(f"runs:/{run_id}/{artifact_path}")
+
+        # If training logged `mlflow.set_tag("logged_model_uri", ...)`, prefer it.
+        try:
+            from mlflow.tracking import MlflowClient
+
+            run = MlflowClient().get_run(run_id)
+            logged_uri = _empty_to_none(run.data.tags.get("logged_model_uri"))
+            if logged_uri:
+                uris.append(logged_uri)
+        except Exception:
+            pass
+
+        # Common artifact_path values across this repo.
+        for fallback in ("credit_model_pipeline_v2", "model"):
+            if fallback != artifact_path:
+                uris.append(f"runs:/{run_id}/{fallback}")
+
+    model_name = _empty_to_none(MLFLOW_MODEL_NAME)
+    model_stage = _empty_to_none(MLFLOW_MODEL_STAGE)
+    if model_name and model_stage:
+        uris.append(f"models:/{model_name}/{model_stage}")
+
+    return _dedupe_preserve_order(uris)
+
+
 if SKIP_MODEL_LOAD:
     print("SKIP_MODEL_LOAD enabled. Starting API without loading model.", flush=True)
     model = None
@@ -29,14 +95,28 @@ else:
     try:
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-        model_uri = MLFLOW_MODEL_URI
-        if not model_uri and RUN_ID:
-            model_uri = f"runs:/{RUN_ID}/{MLFLOW_MODEL_ARTIFACT_PATH}"
-        if not model_uri:
-            model_uri = f"models:/{MLFLOW_MODEL_NAME}/{MLFLOW_MODEL_STAGE}"
-        print(f"Loading model from mlflow: {model_uri}...", flush=True)
-        model = mlflow.sklearn.load_model(model_uri=model_uri)
-        print("Model loaded successfully!", flush=True)
+        candidates = _iter_candidate_model_uris()
+        if not candidates:
+            raise RuntimeError(
+                "No model URI candidates resolved. Set MLFLOW_MODEL_URI, "
+                "or RUN_ID (+ MLFLOW_MODEL_ARTIFACT_PATH), "
+                "or MLFLOW_MODEL_NAME + MLFLOW_MODEL_STAGE."
+            )
+
+        last_error: Optional[Exception] = None
+        for model_uri in candidates:
+            print(f"Loading model from mlflow: {model_uri}...", flush=True)
+            try:
+                model = mlflow.sklearn.load_model(model_uri=model_uri)
+                print("Model loaded successfully!", flush=True)
+                last_error = None
+                break
+            except Exception as e:
+                last_error = e
+                print(f"Failed loading {model_uri}: {e}", flush=True)
+
+        if last_error is not None:
+            raise last_error
     except Exception as e:
         print(f"Error loading model: {e}", flush=True)
         model = None
