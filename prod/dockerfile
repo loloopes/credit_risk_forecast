@@ -1,12 +1,50 @@
 # 1. Imagem base leve com Python
 FROM python:3.12-slim
 
-# 2. Instala dependências do sistema necessárias para o LightGBM e Psycopg2
+# 2. Instala dependências do sistema necessárias para o LightGBM, PySpark driver e Psycopg2
+# Hadoop JARs must match PySpark’s embedded Hadoop (3.3.4 for Spark 3.5.x) so S3A does not
+# mix a lone hadoop-aws against an older hadoop-common (NoClassDefFoundError: PrefetchingStatistics).
+ARG HADOOP_VER=3.3.4
+ARG AWS_SDK_BUNDLE_VER=1.12.262
+ARG WOODSTOX_VER=6.2.8
+ARG STAX2_API_VER=4.2.1
+ARG ICEBERG_RUNTIME_VER=1.10.1
+ARG COMMONS_CONFIGURATION2_VER=2.8.0
+ARG COMMONS_LANG3_VER=3.12.0
+ARG COMMONS_TEXT_VER=1.10.0
+
 RUN apt-get update && apt-get install -y \
     libgomp1 \
     libpq-dev \
     gcc \
+    openjdk-21-jre \
+    curl \
+    procps \
     && rm -rf /var/lib/apt/lists/*
+
+# Keep PySpark driver Python pinned to the same minor as Spark workers.
+ENV PYSPARK_DRIVER_PYTHON=python3 \
+    PYSPARK_PYTHON=python3
+
+RUN mkdir -p /opt/extra-jars \
+    && curl -fsSLo /opt/extra-jars/hadoop-common-${HADOOP_VER}.jar \
+        "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-common/${HADOOP_VER}/hadoop-common-${HADOOP_VER}.jar" \
+    && curl -fsSLo /opt/extra-jars/hadoop-aws-${HADOOP_VER}.jar \
+        "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_VER}/hadoop-aws-${HADOOP_VER}.jar" \
+    && curl -fsSLo /opt/extra-jars/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VER}.jar \
+        "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_BUNDLE_VER}/aws-java-sdk-bundle-${AWS_SDK_BUNDLE_VER}.jar" \
+    && curl -fsSLo /opt/extra-jars/commons-configuration2-${COMMONS_CONFIGURATION2_VER}.jar \
+        "https://repo1.maven.org/maven2/org/apache/commons/commons-configuration2/${COMMONS_CONFIGURATION2_VER}/commons-configuration2-${COMMONS_CONFIGURATION2_VER}.jar" \
+    && curl -fsSLo /opt/extra-jars/commons-lang3-${COMMONS_LANG3_VER}.jar \
+        "https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/${COMMONS_LANG3_VER}/commons-lang3-${COMMONS_LANG3_VER}.jar" \
+    && curl -fsSLo /opt/extra-jars/commons-text-${COMMONS_TEXT_VER}.jar \
+        "https://repo1.maven.org/maven2/org/apache/commons/commons-text/${COMMONS_TEXT_VER}/commons-text-${COMMONS_TEXT_VER}.jar" \
+    && curl -fsSLo /opt/extra-jars/woodstox-core-${WOODSTOX_VER}.jar \
+        "https://repo1.maven.org/maven2/com/fasterxml/woodstox/woodstox-core/${WOODSTOX_VER}/woodstox-core-${WOODSTOX_VER}.jar" \
+    && curl -fsSLo /opt/extra-jars/stax2-api-${STAX2_API_VER}.jar \
+        "https://repo1.maven.org/maven2/org/codehaus/woodstox/stax2-api/${STAX2_API_VER}/stax2-api-${STAX2_API_VER}.jar" \
+    && curl -fsSLo /opt/extra-jars/iceberg-spark-runtime-3.5_2.12-${ICEBERG_RUNTIME_VER}.jar \
+        "https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/${ICEBERG_RUNTIME_VER}/iceberg-spark-runtime-3.5_2.12-${ICEBERG_RUNTIME_VER}.jar"
 
 # 3. Define o diretório de trabalho
 WORKDIR /app

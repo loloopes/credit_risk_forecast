@@ -12,3 +12,4 @@ pydantic==2.6.4
 cloudpickle==3.1.1
 mlflow
 boto3
+pyspark==3.5.2

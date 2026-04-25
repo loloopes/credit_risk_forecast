@@ -24,6 +24,9 @@ services:
       - "9001:9001"   # Console UI
     volumes:
       - ./minio_data:/data
+    networks:
+      - default
+      - minio_shared
 
   create_bucket:
     image: minio/mc
@@ -75,8 +78,9 @@ services:
   credit_api:
     build:
       context: ./prod
-      dockerfile: Dockerfile
+      dockerfile: dockerfile
     container_name: credit_scoring_api
+    hostname: credit-scoring-api
     depends_on:
       mlflow:
         condition: service_healthy
@@ -97,3 +101,26 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       MLFLOW_S3_IGNORE_TLS: ${MLFLOW_S3_IGNORE_TLS}
+      SPARK_MASTER_URL: ${SPARK_MASTER_URL:-spark://spark-master:7077}
+      SPARK_HIVE_METASTORE_URIS: ${SPARK_HIVE_METASTORE_URIS:-thrift://hive-metastore:9083}
+      SPARK_SQL_WAREHOUSE_DIR: ${SPARK_SQL_WAREHOUSE_DIR:-s3a://lakehouse/}
+      SPARK_DRIVER_HOST: ${SPARK_DRIVER_HOST:-credit-scoring-api}
+      SPARK_S3A_ENDPOINT: ${SPARK_S3A_ENDPOINT:-http://minio:9000}
+      PYSPARK_DRIVER_PYTHON: ${PYSPARK_DRIVER_PYTHON:-python3}
+      PYSPARK_PYTHON: ${PYSPARK_PYTHON:-python3}
+      PREDICTION_LOG_DATABASE: ${PREDICTION_LOG_DATABASE:-forecast}
+      PREDICTION_LOG_TABLE: ${PREDICTION_LOG_TABLE:-prediction_events}
+      PREDICTION_LOG_ENABLED: ${PREDICTION_LOG_ENABLED:-true}
+      PREDICTION_LOG_STRICT: ${PREDICTION_LOG_STRICT:-true}
+    networks:
+      - default
+      - minio_shared
+      - credit_risk_shared
+
+networks:
+  minio_shared:
+    external: true
+    name: minio_minio
+  credit_risk_shared:
+    external: true
+    name: credit_risk_shared
