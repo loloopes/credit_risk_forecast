@@ -7,7 +7,7 @@ import time
 import warnings
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 from uuid import uuid4
 
 import mlflow
@@ -498,6 +498,62 @@ class CreditApplication(BaseModel):
     possui_imovel: Optional[str] = None
 
 
+DEFAULT_PREDICT_PAYLOAD: dict[str, Any] = {
+    "id_cliente": "0",
+    "id_contrato": None,
+    "tipo_contrato": "Cash loans",
+    "status_contrato": "Approved",
+    "tipo_pagamento": "Cash through a bank",
+    "finalidade_emprestimo": "XAP",
+    "tipo_cliente": "Repeater",
+    "tipo_portfolio": "POS",
+    "tipo_produto": "XNA",
+    "categoria_bem": "Mobile",
+    "setor_vendedor": "Connectivity",
+    "canal_venda": "Country-wide",
+    "faixa_rendimento": None,
+    "combinacao_produto": None,
+    "area_venda": None,
+    "dia_semana_solicitacao": "Monday",
+    "data_nascimento": "1990-01-01",
+    "data_decisao": "2024-01-01",
+    "data_liberacao": None,
+    "data_primeiro_vencimento": None,
+    "data_ultimo_vencimento_original": None,
+    "data_ultimo_vencimento": None,
+    "data_encerramento": None,
+    "valor_solicitado": 0.0,
+    "valor_credito": 0.0,
+    "valor_bem": 0.0,
+    "valor_parcela": 0.0,
+    "valor_entrada": 0.0,
+    "percentual_entrada": 0.0,
+    "qtd_parcelas_planejadas": 12,
+    "taxa_juros_padrao": 0.03,
+    "taxa_juros_promocional": 0.03,
+    "hora_solicitacao": 12,
+    "flag_ultima_solicitacao_contrato": 0,
+    "flag_ultima_solicitacao_dia": 0,
+    "acompanhantes_cliente": 0,
+    "flag_seguro_contratado": 0,
+    "motivo_recusa": None,
+    "renda_anual": None,
+    "qtd_membros_familia": None,
+    "possui_carro": None,
+    "possui_imovel": None,
+}
+
+
+def _normalize_predict_payload(payload: dict[str, Any]) -> CreditApplication:
+    merged = dict(DEFAULT_PREDICT_PAYLOAD)
+    merged.update(payload)
+    if not merged.get("id_cliente"):
+        merged["id_cliente"] = "0"
+    if not merged.get("data_decisao"):
+        merged["data_decisao"] = datetime.now(timezone.utc).date().isoformat()
+    return CreditApplication.model_validate(merged)
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     _start_prediction_log_worker()
@@ -515,12 +571,15 @@ app = FastAPI(title="Datarisk Credit Scoring API", lifespan=_lifespan)
 
 
 @app.post("/predict")
-async def predict(application: CreditApplication):
+async def predict(application: dict[str, Any]):
     if model is None:
         raise HTTPException(status_code=500, detail="Modelo não carregado no servidor.")
 
     try:
-        request_payload = application.model_dump()
+        if not isinstance(application, dict):
+            raise HTTPException(status_code=400, detail="Payload deve ser um objeto JSON.")
+        normalized_application = _normalize_predict_payload(application)
+        request_payload = normalized_application.model_dump()
         input_df = pd.DataFrame([request_payload])
         probability = model.predict_proba(input_df)[0, 1]
         request_id = str(uuid4())
