@@ -1,8 +1,9 @@
-import asyncio
 import json
 import os
+from queue import Empty, Full, Queue
 import socket
 import threading
+import time
 import warnings
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -40,6 +41,9 @@ MLFLOW_MODEL_STAGE = os.getenv("MLFLOW_MODEL_STAGE", "latest")
 SKIP_MODEL_LOAD = os.getenv("SKIP_MODEL_LOAD", "false").lower() in {"1", "true", "yes"}
 PREDICTION_LOG_ENABLED = os.getenv("PREDICTION_LOG_ENABLED", "true").lower() in {"1", "true", "yes"}
 PREDICTION_LOG_STRICT = os.getenv("PREDICTION_LOG_STRICT", "true").lower() in {"1", "true", "yes"}
+PREDICTION_LOG_FLUSH_INTERVAL_MS = int(os.getenv("PREDICTION_LOG_FLUSH_INTERVAL_MS", "200"))
+PREDICTION_LOG_BATCH_SIZE = int(os.getenv("PREDICTION_LOG_BATCH_SIZE", "500"))
+PREDICTION_LOG_QUEUE_MAXSIZE = int(os.getenv("PREDICTION_LOG_QUEUE_MAXSIZE", "10000"))
 
 # Spark cluster (driver runs in this process; executors on existing workers)
 SPARK_MASTER_URL = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
@@ -70,6 +74,9 @@ PREDICTION_LOG_DATABASE = os.getenv("PREDICTION_LOG_DATABASE", "forecast")
 PREDICTION_LOG_TABLE = os.getenv("PREDICTION_LOG_TABLE", "prediction_events")
 ICEBERG_MAIN_CATALOG = os.getenv("ICEBERG_MAIN_CATALOG", "iceberg")
 ICEBERG_HMS_CATALOG = os.getenv("ICEBERG_HMS_CATALOG", "iceberg_hms")
+_prediction_queue: "Queue[dict]" = Queue(maxsize=max(PREDICTION_LOG_QUEUE_MAXSIZE, 1))
+_prediction_worker_stop = threading.Event()
+_prediction_worker_thread: Optional[threading.Thread] = None
 
 
 def _empty_to_none(value: Optional[str]) -> Optional[str]:
@@ -278,19 +285,26 @@ def _ensure_prediction_table_locked(spark) -> None:
     _prediction_ddl_done = True
 
 
-def _append_prediction_to_lakehouse(
-    request_payload: dict,
-    response_payload: dict,
-    request_id: str,
-) -> None:
+def _append_prediction_events_to_lakehouse(events: list[dict]) -> None:
     if not PREDICTION_LOG_ENABLED:
         return
+    if not events:
+        return
 
-    event_ts = datetime.now(timezone.utc).isoformat()
     model_name = _empty_to_none(MLFLOW_MODEL_NAME) or ""
     model_stage = _empty_to_none(MLFLOW_MODEL_STAGE) or ""
-    request_json = json.dumps(request_payload, ensure_ascii=False)
-    response_json = json.dumps(response_payload, ensure_ascii=False)
+    rows = []
+    for event in events:
+        rows.append(
+            {
+                "event_id": event["request_id"],
+                "event_ts": event["event_ts"],
+                "model_name": model_name,
+                "model_stage": model_stage,
+                "request_json": json.dumps(event["request_payload"], ensure_ascii=False),
+                "response_json": json.dumps(event["response_payload"], ensure_ascii=False),
+            }
+        )
 
     global _prediction_hms_registered
     with _spark_lock:
@@ -301,18 +315,7 @@ def _append_prediction_to_lakehouse(
         table_name = f"{PREDICTION_LOG_DATABASE}.{PREDICTION_LOG_TABLE}"
         # Write through Spark (Iceberg HMS catalog) to persist in lakehouse.
         full_table_name = f"{ICEBERG_HMS_CATALOG}.{table_name}"
-        event_df = spark.createDataFrame(
-            [
-                {
-                    "event_id": request_id,
-                    "event_ts": event_ts,
-                    "model_name": model_name,
-                    "model_stage": model_stage,
-                    "request_json": request_json,
-                    "response_json": response_json,
-                }
-            ]
-        )
+        event_df = spark.createDataFrame(rows)
         writer = (
             event_df.writeTo(full_table_name)
             .tableProperty("format-version", "2")
@@ -343,6 +346,72 @@ def _append_prediction_to_lakehouse(
         # Already writing directly to HMS catalog; no manual register needed.
         if not _prediction_hms_registered:
             _prediction_hms_registered = True
+
+
+def _enqueue_prediction_event(request_payload: dict, response_payload: dict, request_id: str) -> None:
+    if not PREDICTION_LOG_ENABLED:
+        return
+    event = {
+        "request_id": request_id,
+        "event_ts": datetime.now(timezone.utc).isoformat(),
+        "request_payload": request_payload,
+        "response_payload": response_payload,
+    }
+    try:
+        _prediction_queue.put_nowait(event)
+    except Full as queue_error:
+        print("Prediction log queue full. Dropping event.", flush=True)
+        if PREDICTION_LOG_STRICT:
+            raise RuntimeError("Prediction log queue is full.") from queue_error
+
+
+def _prediction_log_worker() -> None:
+    flush_interval_seconds = max(PREDICTION_LOG_FLUSH_INTERVAL_MS, 1) / 1000.0
+    max_batch = max(PREDICTION_LOG_BATCH_SIZE, 1)
+    pending: list[dict] = []
+    next_flush_at = time.monotonic() + flush_interval_seconds
+    while True:
+        timeout = max(0.0, next_flush_at - time.monotonic())
+        try:
+            pending.append(_prediction_queue.get(timeout=timeout))
+        except Empty:
+            pass
+
+        should_flush = len(pending) >= max_batch or time.monotonic() >= next_flush_at
+        should_stop = _prediction_worker_stop.is_set() and _prediction_queue.empty()
+        if should_flush and pending:
+            try:
+                _append_prediction_events_to_lakehouse(pending)
+            except Exception as log_error:
+                print(f"Prediction batch log error: {log_error}", flush=True)
+            finally:
+                pending = []
+                next_flush_at = time.monotonic() + flush_interval_seconds
+        if should_stop and not pending:
+            return
+
+
+def _start_prediction_log_worker() -> None:
+    global _prediction_worker_thread
+    if not PREDICTION_LOG_ENABLED:
+        return
+    if _prediction_worker_thread and _prediction_worker_thread.is_alive():
+        return
+    _prediction_worker_stop.clear()
+    _prediction_worker_thread = threading.Thread(
+        target=_prediction_log_worker,
+        name="prediction-log-worker",
+        daemon=True,
+    )
+    _prediction_worker_thread.start()
+
+
+def _stop_prediction_log_worker() -> None:
+    worker = _prediction_worker_thread
+    if worker is None:
+        return
+    _prediction_worker_stop.set()
+    worker.join(timeout=5)
 
 
 if SKIP_MODEL_LOAD:
@@ -431,7 +500,9 @@ class CreditApplication(BaseModel):
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    _start_prediction_log_worker()
     yield
+    _stop_prediction_log_worker()
     _stop_spark_session()
 
 
@@ -468,18 +539,13 @@ async def predict(application: CreditApplication):
         }
 
         try:
-            await asyncio.to_thread(
-                _append_prediction_to_lakehouse,
-                request_payload,
-                prediction_response,
-                request_id,
-            )
+            _enqueue_prediction_event(request_payload, prediction_response, request_id)
         except Exception as log_error:
-            print(f"Prediction log error: {log_error}", flush=True)
+            print(f"Prediction queue error: {log_error}", flush=True)
             if PREDICTION_LOG_STRICT:
                 raise HTTPException(
                     status_code=503,
-                    detail="Falha ao persistir request/response no lakehouse.",
+                    detail="Falha ao enfileirar request/response para persistencia.",
                 ) from log_error
 
         return prediction_response
