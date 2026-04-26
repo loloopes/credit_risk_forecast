@@ -267,7 +267,10 @@ def _ensure_prediction_table_locked(spark) -> None:
     if _prediction_ddl_done:
         return
     db = PREDICTION_LOG_DATABASE
+    # Keep both syntaxes for compatibility across catalog implementations.
+    spark.sql(f"CREATE DATABASE IF NOT EXISTS {ICEBERG_MAIN_CATALOG}.{db}")
     spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {ICEBERG_MAIN_CATALOG}.{db}")
+    spark.sql(f"CREATE DATABASE IF NOT EXISTS {ICEBERG_HMS_CATALOG}.{db}")
     spark.sql(
         f"CREATE NAMESPACE IF NOT EXISTS {ICEBERG_HMS_CATALOG}.{db} "
         f"LOCATION '{SPARK_SQL_WAREHOUSE_DIR.rstrip('/')}/{db}'"
@@ -291,38 +294,51 @@ def _append_prediction_to_lakehouse(
 
     global _prediction_hms_registered
     with _spark_lock:
+        from pyspark.sql.utils import AnalysisException
+
         spark = _ensure_spark_session_locked()
         _ensure_prediction_table_locked(spark)
         table_name = f"{PREDICTION_LOG_DATABASE}.{PREDICTION_LOG_TABLE}"
-        # Write through the same Hive-backed Iceberg catalog queried by Trino.
-        # This keeps table metadata and snapshots in sync for append visibility.
+        # Write through Spark (Iceberg HMS catalog) to persist in lakehouse.
         full_table_name = f"{ICEBERG_HMS_CATALOG}.{table_name}"
-        row_sql = ", ".join(
+        event_df = spark.createDataFrame(
             [
-                _sql_literal(request_id),
-                _sql_literal(event_ts),
-                _sql_literal(model_name),
-                _sql_literal(model_stage),
-                _sql_literal(request_json),
-                _sql_literal(response_json),
+                {
+                    "event_id": request_id,
+                    "event_ts": event_ts,
+                    "model_name": model_name,
+                    "model_stage": model_stage,
+                    "request_json": request_json,
+                    "response_json": response_json,
+                }
             ]
         )
-        # Ensure table exists (no-op if already present), then append a row.
-        spark.sql(
-            f"CREATE TABLE IF NOT EXISTS {full_table_name} ("
-            "event_id STRING, "
-            "event_ts STRING, "
-            "model_name STRING, "
-            "model_stage STRING, "
-            "request_json STRING, "
-            "response_json STRING"
-            ") USING iceberg"
+        writer = (
+            event_df.writeTo(full_table_name)
+            .tableProperty("format-version", "2")
+            .tableProperty("write.format.default", "parquet")
         )
-        spark.sql(
-            f"INSERT INTO {full_table_name} "
-            f"(event_id, event_ts, model_name, model_stage, request_json, response_json) "
-            f"VALUES ({row_sql})"
-        )
+        try:
+            writer.append()
+        except AnalysisException:
+            # Some HMS setups do not auto-create namespace via V2 writer path.
+            spark.sql(
+                f"CREATE DATABASE IF NOT EXISTS {ICEBERG_HMS_CATALOG}.{PREDICTION_LOG_DATABASE}"
+            )
+            spark.sql(
+                f"CREATE NAMESPACE IF NOT EXISTS {ICEBERG_HMS_CATALOG}.{PREDICTION_LOG_DATABASE}"
+            )
+            spark.sql(
+                f"CREATE TABLE IF NOT EXISTS {full_table_name} ("
+                "event_id STRING, "
+                "event_ts STRING, "
+                "model_name STRING, "
+                "model_stage STRING, "
+                "request_json STRING, "
+                "response_json STRING"
+                ") USING iceberg"
+            )
+            writer.append()
 
         # Already writing directly to HMS catalog; no manual register needed.
         if not _prediction_hms_registered:
