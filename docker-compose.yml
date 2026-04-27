@@ -112,10 +112,47 @@ services:
       PREDICTION_LOG_TABLE: ${PREDICTION_LOG_TABLE:-prediction_events}
       PREDICTION_LOG_ENABLED: ${PREDICTION_LOG_ENABLED:-true}
       PREDICTION_LOG_STRICT: ${PREDICTION_LOG_STRICT:-true}
+      KAFKA_CONSUMER_ENABLED: ${KAFKA_CONSUMER_ENABLED:-true}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_CONSUMER_GROUP_ID: ${KAFKA_CONSUMER_GROUP_ID:-credit-risk-forecast-consumer}
+      KAFKA_CONSUMER_TOPIC: ${KAFKA_CONSUMER_TOPIC:-predict}
+      KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE: ${KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE:-true}
+      KAFKA_CONSUMER_MAX_POLL_RECORDS: ${KAFKA_CONSUMER_MAX_POLL_RECORDS:-64}
+      KAFKA_CONSUMER_BATCH_MAX_WAIT_MS: ${KAFKA_CONSUMER_BATCH_MAX_WAIT_MS:-200}
     networks:
       - default
       - minio_shared
       - credit_risk_shared
+  
+  kafka:
+    image: confluentinc/cp-kafka:7.8.3
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_KRAFT_MODE: 'true'
+      CLUSTER_ID: '1L6g7nGhU-eAKfL--X25wo'
+      KAFKA_NODE_ID: 1
+
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      KAFKA_LOG_DIR: /tmp/kafka-combined-logs
+
+    networks:
+      - default
+      - minio_shared
+      - credit_risk_shared  
+    volumes:
+      - ./kafka_data:/tmp/kafka-combined-logs
 
 networks:
   minio_shared:

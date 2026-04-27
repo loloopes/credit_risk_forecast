@@ -42,6 +42,16 @@ MLFLOW_MODEL_ARTIFACT_PATH=credit_model_pipeline_v2
 MLFLOW_MODEL_NAME=credit_riks_forecast
 MLFLOW_MODEL_STAGE=latest
 
+# Kafka consumer (credit_api container)
+# Inside Docker network, use service DNS name `kafka`, not localhost.
+KAFKA_CONSUMER_ENABLED=true
+KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+KAFKA_CONSUMER_GROUP_ID=credit-risk-forecast-consumer
+KAFKA_CONSUMER_TOPIC=predict
+KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE=true
+KAFKA_CONSUMER_MAX_POLL_RECORDS=64
+KAFKA_CONSUMER_BATCH_MAX_WAIT_MS=200
+
 # Priority 4 AIRFLOW
 AIRFLOW_IMAGE_NAME=apache/airflow:3.1.0
 AIRFLOW_UID=50000
