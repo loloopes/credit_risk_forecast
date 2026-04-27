@@ -25,8 +25,11 @@ services:
     volumes:
       - ./minio_data:/data
     networks:
-      - default
-      - minio_shared
+      default:
+      minio_shared:
+        # So other stacks on minio_minio (e.g. Trino) can resolve hostname "minio"
+        aliases:
+          - minio
 
   create_bucket:
     image: minio/mc
@@ -119,6 +122,7 @@ services:
       KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE: ${KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE:-true}
       KAFKA_CONSUMER_MAX_POLL_RECORDS: ${KAFKA_CONSUMER_MAX_POLL_RECORDS:-64}
       KAFKA_CONSUMER_BATCH_MAX_WAIT_MS: ${KAFKA_CONSUMER_BATCH_MAX_WAIT_MS:-200}
+      LAKEHOUSE_WRITE_REPARTITION: ${LAKEHOUSE_WRITE_REPARTITION:-2}
     networks:
       - default
       - minio_shared

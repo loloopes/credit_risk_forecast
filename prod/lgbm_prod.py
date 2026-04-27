@@ -97,9 +97,14 @@ KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE = os.getenv(
     "KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE", "true"
 ).lower() in {"1", "true", "yes"}
 KAFKA_CONSUMER_MAX_POLL_RECORDS = max(
-    int(os.getenv("KAFKA_CONSUMER_MAX_POLL_RECORDS", "64")),
+    int(os.getenv("KAFKA_CONSUMER_MAX_POLL_RECORDS", "512")),
     1,
 )
+KAFKA_CONSUMER_BATCH_MAX_WAIT_MS = max(
+    int(os.getenv("KAFKA_CONSUMER_BATCH_MAX_WAIT_MS", "200")),
+    1,
+)
+LAKEHOUSE_WRITE_REPARTITION = max(int(os.getenv("LAKEHOUSE_WRITE_REPARTITION", "2")), 0)
 
 
 def _empty_to_none(value: Optional[str]) -> Optional[str]:
@@ -377,14 +382,64 @@ def _kafka_consumer_worker() -> None:
     )
     consumer.subscribe([KAFKA_CONSUMER_TOPIC])
     print(f"Kafka consumer started for topic={KAFKA_CONSUMER_TOPIC}", flush=True)
+    pending_msgs = []
+    pending_payloads: list[dict[str, Any]] = []
+    pending_request_ids: list[Optional[str]] = []
+    flush_after_seconds = KAFKA_CONSUMER_BATCH_MAX_WAIT_MS / 1000.0
+    next_flush_at = time.monotonic() + flush_after_seconds
+
+    def _flush_batch() -> None:
+        nonlocal pending_msgs, pending_payloads, pending_request_ids, next_flush_at
+        if not pending_msgs:
+            next_flush_at = time.monotonic() + flush_after_seconds
+            return
+        try:
+            predictions = _predict_batch_from_payloads(
+                pending_payloads,
+                request_ids=pending_request_ids,
+                sync_log=KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE,
+            )
+            consumer.commit(asynchronous=False)
+            print(
+                f"Kafka batch persisted count={len(predictions)} "
+                f"last_request_id={predictions[-1]['request_id']}",
+                flush=True,
+            )
+        except Exception as kafka_process_error:
+            print(f"Kafka batch processing error: {kafka_process_error}", flush=True)
+            print(traceback.format_exc(), flush=True)
+            # Fallback to per-message processing to isolate bad records.
+            for msg in pending_msgs:
+                try:
+                    payload = _decode_kafka_payload(msg.value())
+                    kafka_request_id = msg.key().decode("utf-8") if msg.key() else None
+                    prediction = _predict_from_payload(
+                        payload,
+                        request_id=kafka_request_id,
+                        sync_log=KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE,
+                    )
+                    consumer.commit(message=msg, asynchronous=False)
+                    print(
+                        f"Kafka prediction persisted request_id={prediction['request_id']}",
+                        flush=True,
+                    )
+                except Exception as single_error:
+                    print(f"Kafka processing error: {single_error}", flush=True)
+                    print(traceback.format_exc(), flush=True)
+        finally:
+            pending_msgs = []
+            pending_payloads = []
+            pending_request_ids = []
+            next_flush_at = time.monotonic() + flush_after_seconds
+
     try:
         while not _kafka_consumer_stop.is_set():
-            msgs = consumer.consume(num_messages=KAFKA_CONSUMER_MAX_POLL_RECORDS, timeout=1.0)
-            if not msgs:
-                continue
-            valid_msgs = []
-            payloads: list[dict[str, Any]] = []
-            request_ids: list[Optional[str]] = []
+            timeout_seconds = max(0.0, next_flush_at - time.monotonic())
+            # Keep short poll timeouts so timed flush can fire predictably.
+            msgs = consumer.consume(
+                num_messages=KAFKA_CONSUMER_MAX_POLL_RECORDS,
+                timeout=min(timeout_seconds, 0.2),
+            )
 
             for msg in msgs:
                 if msg is None:
@@ -395,50 +450,19 @@ def _kafka_consumer_worker() -> None:
                     print(f"Kafka consume error: {msg.error()}", flush=True)
                     continue
                 try:
-                    payloads.append(_decode_kafka_payload(msg.value()))
-                    request_ids.append(msg.key().decode("utf-8") if msg.key() else None)
-                    valid_msgs.append(msg)
+                    pending_payloads.append(_decode_kafka_payload(msg.value()))
+                    pending_request_ids.append(msg.key().decode("utf-8") if msg.key() else None)
+                    pending_msgs.append(msg)
                 except Exception as decode_error:
                     print(f"Kafka decode error: {decode_error}", flush=True)
                     print(traceback.format_exc(), flush=True)
 
-            if not valid_msgs:
-                continue
-
-            try:
-                predictions = _predict_batch_from_payloads(
-                    payloads,
-                    request_ids=request_ids,
-                    sync_log=KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE,
-                )
-                consumer.commit(asynchronous=False)
-                print(
-                    f"Kafka batch persisted count={len(predictions)} "
-                    f"last_request_id={predictions[-1]['request_id']}",
-                    flush=True,
-                )
-            except Exception as kafka_process_error:
-                print(f"Kafka batch processing error: {kafka_process_error}", flush=True)
-                print(traceback.format_exc(), flush=True)
-                # Fallback to per-message processing to isolate bad records.
-                for msg in valid_msgs:
-                    try:
-                        payload = _decode_kafka_payload(msg.value())
-                        kafka_request_id = msg.key().decode("utf-8") if msg.key() else None
-                        prediction = _predict_from_payload(
-                            payload,
-                            request_id=kafka_request_id,
-                            sync_log=KAFKA_CONSUMER_SYNC_LAKEHOUSE_WRITE,
-                        )
-                        consumer.commit(message=msg, asynchronous=False)
-                        print(
-                            f"Kafka prediction persisted request_id={prediction['request_id']}",
-                            flush=True,
-                        )
-                    except Exception as single_error:
-                        print(f"Kafka processing error: {single_error}", flush=True)
-                        print(traceback.format_exc(), flush=True)
+            should_flush_by_size = len(pending_msgs) >= KAFKA_CONSUMER_MAX_POLL_RECORDS
+            should_flush_by_time = pending_msgs and time.monotonic() >= next_flush_at
+            if should_flush_by_size or should_flush_by_time:
+                _flush_batch()
     finally:
+        _flush_batch()
         consumer.close()
         print("Kafka consumer stopped.", flush=True)
 
@@ -537,6 +561,8 @@ def _append_prediction_events_to_lakehouse(events: list[dict]) -> None:
         # Write through Spark (Iceberg HMS catalog) to persist in lakehouse.
         full_table_name = f"{ICEBERG_HMS_CATALOG}.{table_name}"
         event_df = spark.createDataFrame(rows)
+        if LAKEHOUSE_WRITE_REPARTITION > 0 and len(rows) > 1:
+            event_df = event_df.repartition(LAKEHOUSE_WRITE_REPARTITION)
         writer = (
             event_df.writeTo(full_table_name)
             .tableProperty("format-version", "2")

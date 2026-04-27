@@ -299,6 +299,48 @@ def _missing_required_fields(row: pd.Series) -> list[str]:
     return missing
 
 
+def _lakehouse_negado_fraction(
+    events_df: pd.DataFrame,
+    column: str,
+) -> tuple[float | None, int, int]:
+    """Parse response_json strings; fraction of rows with threshold_decision == Negado among successful predictions."""
+    if column not in events_df.columns:
+        raise RuntimeError(
+            f"Lakehouse prediction events export is missing column {column!r}. "
+            f"Columns present: {list(events_df.columns)}"
+        )
+
+    negado_count = 0
+    total = 0
+    for raw in events_df[column]:
+        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+            continue
+        if isinstance(raw, dict):
+            obj = raw
+        elif isinstance(raw, str):
+            raw_stripped = raw.strip()
+            if not raw_stripped:
+                continue
+            try:
+                obj = json.loads(raw_stripped)
+            except json.JSONDecodeError:
+                continue
+        else:
+            continue
+
+        status = obj.get("status")
+        if status is not None and status != "success":
+            continue
+
+        total += 1
+        if obj.get("threshold_decision") == "Negado":
+            negado_count += 1
+
+    if total == 0:
+        return None, 0, 0
+    return negado_count / total, negado_count, total
+
+
 def _score_payload(
     row_dict: dict, payload: dict, api_url: str, timeout: int, prediction_col: str
 ) -> tuple[bool, dict | None, dict | None]:
@@ -444,13 +486,63 @@ def main() -> None:
             auc_drop = ref_auc - ana_auc
             decay_detected = auc_drop >= float(os.getenv("MODEL_DECAY_MIN_AUC_DROP", "0.03"))
 
+    negado_checked = False
+    negado_fraction = None
+    negado_below_threshold_retrain = False
+    negado_count = 0
+    negado_denominator = 0
+
+    lake_uri = os.getenv("LAKEHOUSE_PREDICTION_EVENTS_URI", "").strip()
+    if lake_uri:
+        negado_checked = True
+        lake_col = os.getenv("LAKEHOUSE_RESPONSE_JSON_COLUMN", "response_json")
+        min_negado_rate = float(os.getenv("LAKEHOUSE_NEGADO_MIN_RATE", "0.90"))
+        events_df = load_df(lake_uri)
+        negado_fraction, negado_count, negado_denominator = _lakehouse_negado_fraction(
+            events_df, lake_col
+        )
+        if negado_fraction is not None:
+            negado_below_threshold_retrain = negado_fraction < min_negado_rate
+            print(
+                json.dumps(
+                    {
+                        "lakehouse_negado_check": True,
+                        "negado_fraction": round(negado_fraction, 6),
+                        "negado_count": negado_count,
+                        "negado_denominator": negado_denominator,
+                        "min_negado_rate_required": min_negado_rate,
+                        "below_threshold_triggers_retrain": negado_below_threshold_retrain,
+                    }
+                ),
+                flush=True,
+            )
+        else:
+            print(
+                json.dumps(
+                    {
+                        "lakehouse_negado_check": True,
+                        "warning": "no countable prediction rows "
+                        "(status success, valid response_json)",
+                        "lakehouse_uri": lake_uri,
+                    }
+                ),
+                flush=True,
+            )
+
     result = {
-        "should_retrain": bool(drift_detected or decay_detected),
+        "should_retrain": bool(
+            drift_detected or decay_detected or negado_below_threshold_retrain
+        ),
         "drift_detected": bool(drift_detected),
         "decay_detected": bool(decay_detected),
         "decay_checked": bool(decay_checked),
         "alert_rate": alert_rate,
         "auc_drop": auc_drop,
+        "lakehouse_negado_checked": negado_checked,
+        "negado_fraction": negado_fraction,
+        "negado_below_threshold_retrain": bool(negado_below_threshold_retrain),
+        "negado_count": negado_count,
+        "negado_denominator": negado_denominator,
     }
     print(json.dumps(result))
 
