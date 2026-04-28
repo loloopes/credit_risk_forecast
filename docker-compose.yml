@@ -10,7 +10,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
 
   minio:
     image: minio/minio:latest
@@ -74,7 +74,7 @@ services:
       --host 0.0.0.0
       --port 5000
       --allowed-hosts '${MLFLOW_SERVER_ALLOWED_HOSTS}'
-      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-mlflow_postgres}:5432/${POSTGRES_DB}
       --default-artifact-root s3://${MLFLOW_BUCKET}
       "
 
@@ -165,3 +165,6 @@ networks:
   credit_risk_shared:
     external: true
     name: credit_risk_shared
+
+volumes:
+  postgres_data:
